@@ -7,6 +7,7 @@ from typing import Dict, Any, List, Optional
 import urllib.request
 from PIL import Image, ImageEnhance, ImageFilter, ImageStat
 from app.core.config import settings
+from app.services.layout_ocr import extract_layout_ocr
 
 logger = logging.getLogger(__name__)
 
@@ -358,6 +359,11 @@ class OCRService:
             regions = []
 
         lines = [line.strip() for line in ocr_text.splitlines() if line.strip()]
+        try:
+            layout_result = extract_layout_ocr(pil_img)
+        except (OSError, ValueError, TypeError) as err:
+            logger.warning("ROI layout OCR failed; retaining full-image OCR: %s", err)
+            layout_result = {"regions": [], "text": "", "region_count": 0, "engine": "roi-segmentation"}
 
         return {
             "status": "success" if ocr_text else "completed_with_warning",
@@ -367,6 +373,9 @@ class OCRService:
             "engine": "tesseract",
             "lines": lines,
             "regions": regions,
+            "layout_regions": layout_result["regions"],
+            "layout_text": layout_result["text"],
+            "layout_region_count": layout_result["region_count"],
             "image_quality": "poor" if quality["quality"] == "poor" else ("usable" if ocr_text else "unusable"),
             "quality_reason": quality["reason"],
             "quality": quality,

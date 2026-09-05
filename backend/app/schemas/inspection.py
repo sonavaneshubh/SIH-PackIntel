@@ -27,6 +27,9 @@ class ScanResponse(BaseModel):
     ocr_engine: Optional[str] = None
     ocr_confidence: float = 0.0
     ocr_regions: List[Dict[str, Any]] = []
+    layout_regions: List[Dict[str, Any]] = []
+    layout_text: Optional[str] = None
+    layout_region_count: int = 0
     extracted_declarations: Optional[Dict[str, Any]] = None
     product_information: Dict[str, ProductField] = {}
     extraction_source: str = "ocr"

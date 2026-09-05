@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ArrowRight, Camera, ChevronRight, CloudUpload, Copy, Cpu, Download, History, Package, TrendingDown, TrendingUp, Video } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/Button';
-import { useScanPipeline } from '@/lib/hooks/useScanPipeline';
+import { ScanPipelineState, useScanPipeline } from '@/lib/hooks/useScanPipeline';
 import { CameraScanner } from '@/components/CameraScanner';
 
 const pipelineSteps = ['Capture', 'AI Analysis', 'OCR Extract', 'Compliance', 'Report'];
@@ -23,6 +23,7 @@ export function NewScanView() {
   const [showCamera, setShowCamera] = useState(false);
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const activePipelineStep = getPipelineStep(state.step);
 
   const processFile = useCallback(async (file: File) => {
     setUploadedImageUrl(URL.createObjectURL(file));
@@ -73,7 +74,7 @@ export function NewScanView() {
               <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex flex-wrap gap-3"><Button variant="primary" onClick={() => setShowCamera(true)} disabled={isProcessing}><Video size={16} aria-hidden="true" />{isProcessing ? 'Analyzing...' : 'Start Camera Scan'}</Button><Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isProcessing}><CloudUpload size={16} aria-hidden="true" />Upload Image Instead</Button><input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={handleFileChange} /></div><p className="text-[11px] text-[#64748b]">Supported labels: JPG, PNG, WEBP max 15MB.</p></div>
             </section>
 
-            <section className="rounded-xl border border-[#e2e8f0] bg-white p-5"><p className="text-xs font-bold uppercase text-[#64748b]">Active Analysis Pipeline</p><div className="mt-4 flex flex-wrap items-center gap-2 sm:flex-nowrap">{pipelineSteps.map((step, index) => <React.Fragment key={step}><div className="flex min-w-0 flex-1 items-center gap-2"><span className={`flex size-6 shrink-0 items-center justify-center rounded-full border font-mono text-[11px] font-bold ${index < 2 ? 'border-[#00bfa5] bg-[#e0f7f4] text-[#00bfa5]' : 'border-[#e2e8f0] bg-[#f3f5f8] text-[#64748b]'}`}>{index + 1}</span><span className={`truncate text-xs ${index === 1 ? 'font-bold text-[#1e293b]' : index === 0 ? 'font-semibold text-[#00bfa5]' : 'text-[#64748b]'}`}>{step}</span></div>{index < pipelineSteps.length - 1 && <ArrowRight size={12} className="hidden shrink-0 text-[#94a3b8] sm:block" aria-hidden="true" />}</React.Fragment>)}</div></section>
+            <section className="rounded-xl border border-[#e2e8f0] bg-white p-5"><p className="text-xs font-bold uppercase text-[#64748b]">Active Analysis Pipeline</p><div className="mt-4 flex flex-wrap items-center gap-2 sm:flex-nowrap">{pipelineSteps.map((step, index) => { const status = index < activePipelineStep ? 'complete' : index === activePipelineStep ? 'active' : 'pending'; return <React.Fragment key={step}><div className="flex min-w-0 flex-1 items-center gap-2"><span className={`flex size-6 shrink-0 items-center justify-center rounded-full border font-mono text-[11px] font-bold ${status === 'complete' ? 'border-[#00bfa5] bg-[#e0f7f4] text-[#00bfa5]' : status === 'active' ? 'border-[#00bfa5] bg-[#00bfa5] text-white' : 'border-[#e2e8f0] bg-[#f3f5f8] text-[#64748b]'}`}>{status === 'complete' ? '✓' : index + 1}</span><span className={`truncate text-xs ${status === 'active' ? 'font-bold text-[#1e293b]' : status === 'complete' ? 'font-semibold text-[#00bfa5]' : 'text-[#64748b]'}`}>{step}</span></div>{index < pipelineSteps.length - 1 && <ArrowRight size={12} className="hidden shrink-0 text-[#94a3b8] sm:block" aria-hidden="true" />}</React.Fragment>; })}</div></section>
             {state.error && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{state.error}</p>}
           </div>
 
@@ -89,4 +90,13 @@ export function NewScanView() {
 
 function MetricCard({ label, value = '--', trend, positive = false }: { label: string; value?: string; trend?: string; positive?: boolean }) {
   return <div className="rounded-lg border border-[#e2e8f0] bg-white p-4"><p className="text-[11px] font-semibold uppercase text-[#64748b]">{label}</p><div className="mt-2 flex items-end justify-between"><p className="font-mono text-2xl font-bold text-[#1e293b]">{value}</p>{trend && <span className={`flex items-center gap-0.5 text-[11px] font-semibold ${positive ? 'text-emerald-500' : 'text-red-500'}`}>{positive ? <TrendingUp size={12} aria-hidden="true" /> : <TrendingDown size={12} aria-hidden="true" />}{trend}</span>}</div></div>;
+}
+
+function getPipelineStep(step: ScanPipelineState['step']): number {
+  if (step === 'creating') return 1;
+  if (step === 'uploading' || step === 'ocr' || step === 'extracting') return 2;
+  if (step === 'compliance') return 3;
+  if (step === 'completed') return 4;
+  if (step === 'error') return 0;
+  return 0;
 }

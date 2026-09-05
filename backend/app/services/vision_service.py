@@ -1,34 +1,46 @@
-"""Optional multimodal vision fallback for low-confidence or incomplete OCR.
+"""Multimodal label extraction via Gemini 2.5 Flash, with OCR fallback.
 
 Design notes
 ------------
-* Provider is selected via environment variables (VISION_PROVIDER /
-  VISION_MODEL / VISION_API_KEY, with OPENAI_* accepted as legacy aliases).
-* The provider is never hard-coded into the application architecture — a new
-  provider only needs to implement the small ``VisionProvider`` interface.
+* Primary provider: Gemini 2.5 Flash through the ``google-genai`` SDK,
+  authenticated with ``settings.GEMINI_API_KEY`` (app/core/config.py).
+* The model's JSON output is parsed into the ``ProductExtraction`` schema
+  (app/schemas/product.py), then projected onto the canonical ``ProductField``
+  map consumed by the rest of the pipeline.
+* If the Gemini call fails or times out, extraction degrades to
+  ``OCRService``'s raw text output wrapped into ``ProductExtraction`` with all
+  confidence scores set to 0 and ``image_quality_flag`` set to true.
 * Extraction never invents values: a field is only 'detected' when the model
-  actually reported a value; otherwise it is 'not_visible' (image does not
-  show it) or 'not_printed' (model explicitly asserts absence).
-* Every provider failure raises ``VisionExtractionError`` so the caller can
-  keep the usable OCR results instead of failing the whole scan.
+  actually reported a value; otherwise it is 'not_visible'.
+* Hard failures that prevent any extraction (unreadable image, missing SDK)
+  raise ``VisionExtractionError`` so the caller can keep usable OCR results.
 """
 
 import json
 import logging
 import re
-import urllib.error
-import urllib.request
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
+
+import httpx
 
 from app.core.config import settings
 from app.schemas.product import (
     PRODUCT_FIELDS,
-    CONFLICT_SENSITIVE_FIELDS,
+    ProductExtraction,
     ProductField,
     field as make_field,
 )
+from app.services.ocr_service import OCRService
 
 logger = logging.getLogger(__name__)
+
+try:
+    from google import genai
+    from google.genai import types
+
+    HAS_GENAI = True
+except ImportError:
+    HAS_GENAI = False
 
 CRITICAL_FIELDS = (
     "brand_or_commodity_name",
@@ -42,6 +54,39 @@ CRITICAL_FIELDS = (
 )
 
 _IDENTITY_FIELDS = ("manufacturer_name", "packer_name", "marketer_name")
+
+# Exact system prompt for India's Legal Metrology (Packaged Commodities) Rules,
+# 2011 label extraction. The schema section is appended so the model knows the
+# exact JSON shape to return (per the ProductExtraction schema).
+SYSTEM_PROMPT = """You are a food packaging compliance data extractor for India's Legal Metrology (Packaged Commodities) Rules, 2011.
+You will be given one or more images of a single product's label (front, back, and/or barcode side).
+
+Extract ONLY the fields listed in the schema below, using ONLY text visible in the image(s).
+Do not guess, infer, or autocomplete. Do not pull text from the wrong section of the label.
+
+## CRITICAL RULES
+1. Each field must come from its own semantically correct region: ingredients list, nutrition table,
+   manufacturer/packer/marketer block, MRP/pricing area, and barcode/license area are DIFFERENT regions.
+   Never cross-contaminate them.
+2. If a field is not clearly visible, output null and set confidence to 0. NEVER fabricate a value.
+3. Type-check every value before returning it:
+   - manufacturer_name / packer_name / marketer_name must be a company/entity name. If the candidate text
+     contains "Carbohydrate", "Sugars", "Energy", "kcal", "Protein", "Fat", "mg", "%", it is WRONG —
+     set to null instead.
+   - net_quantity must be a quantity + unit (e.g. "200 g"), never a price or nutrient value.
+   - mrp must be a currency value (Rs./₹), never a nutrient value.
+   - packing_date / expiry_date must be a date or month-year, never a batch/lot number.
+4. Confidence (0-100) must reflect ACTUAL visual clarity of that specific text region in the image —
+   blur, glare, low resolution, or partial occlusion must lower confidence accordingly.
+5. If the image itself is low quality, still attempt extraction but cap ALL confidence scores at 40 
+   and set "image_quality_flag": true.
+6. Return valid JSON only — no prose, no markdown fences.
+
+## Schema
+Return a single JSON object with exactly the keys below. Every field value is
+an object shaped {{"value": <string|null>, "confidence": <integer 0-100>}}
+plus the top-level boolean "image_quality_flag" (see rule 5):
+{fields}"""
 
 
 class VisionExtractionError(RuntimeError):
@@ -157,6 +202,10 @@ def _clean_status(raw: Any, value: Optional[str]) -> str:
     if status == "detected" and not value:
         # A model claiming detection without a value is a hallucination hazard.
         status = "not_visible"
+    if status == "not_visible" and value:
+        # Inference path: the model omitted status (schema only requires
+        # value + confidence), so an extracted value implies detection.
+        status = "detected"
     return status
 
 
@@ -178,23 +227,39 @@ def _norm_field(raw: Any) -> ProductField:
     return make_field(value=value, status=status, confidence=confidence, source="vision")
 
 
-def _extract_payload(payload: Dict[str, Any]) -> Dict[str, ProductField]:
-    result: Dict[str, ProductField] = {}
+# ---------------------------------------------------------------------------
+# ProductExtraction parsing and projection
+# ---------------------------------------------------------------------------
+
+
+def _payload_root(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Unwrap common nested envelopes (product_information / fields)."""
     root: Dict[str, Any] = payload
     if isinstance(payload.get("product_information"), dict):
         root = payload["product_information"]
     if isinstance(payload.get("fields"), dict):
         root = payload["fields"]
+    return root
 
-    for key in PRODUCT_FIELDS:
-        if key in root:
-            result[key] = _norm_field(root[key])
-        else:
-            result[key] = make_field(status="not_visible", source="none")
+
+def _extraction_to_fields(extraction: ProductExtraction) -> Dict[str, ProductField]:
+    """Project a ProductExtraction onto the canonical ProductField map.
+
+    When ``image_quality_flag`` is set, every confidence is capped at 40 per
+    rule 5 of the extraction prompt.
+    """
+    cap = 40.0 if bool(extraction.image_quality_flag) else 100.0
+    result: Dict[str, ProductField] = {}
+    for name in PRODUCT_FIELDS:
+        entry = getattr(extraction, name)
+        converted = _norm_field(entry.model_dump())
+        converted.confidence = min(converted.confidence, cap)
+        result[name] = converted
     return result
 
 
-def _parse_json(content: str) -> Dict[str, ProductField]:
+def _parse_extraction_content(content: str) -> ProductExtraction:
+    """Parse raw LLM text into the ProductExtraction Pydantic model."""
     content = (content or "").strip()
     fence = re.search(r"```(?:json)?\s*(.*?)```", content, re.DOTALL)
     if fence:
@@ -207,102 +272,142 @@ def _parse_json(content: str) -> Dict[str, ProductField]:
         raise VisionExtractionError("Vision provider returned invalid structured JSON.") from exc
     if not isinstance(payload, dict):
         raise VisionExtractionError("Vision provider returned a non-object payload.")
-    return _extract_payload(payload)
+    try:
+        return ProductExtraction.model_validate(_payload_root(payload))
+    except Exception as exc:
+        raise VisionExtractionError(
+            "Vision provider output did not match the ProductExtraction schema."
+        ) from exc
+
+
+def _parse_json(content: str) -> Dict[str, ProductField]:
+    """Parse vision JSON into the canonical ProductField map."""
+    return _extraction_to_fields(_parse_extraction_content(content))
 
 
 # ---------------------------------------------------------------------------
-# OpenAI-compatible provider (messages content array with image_url)
+# OCR fallback
 # ---------------------------------------------------------------------------
 
-_PROMPT_TEMPLATE = """You are extracting information from a packaged commodity label.
 
-Read only information that is visibly present in the supplied image.
-Do not infer, guess, complete, or hallucinate values.
+def _ocr_fallback_extraction(image_url: str) -> Dict[str, ProductField]:
+    """Wrap OCRService's raw text output into the same ProductExtraction schema.
 
-Return ONLY a single valid JSON object. For EVERY field use one of these shapes:
-  "field_name": {{"value": "...", "status": "detected", "confidence": 0-100}}
-  "field_name": {{"value": null, "status": "not_visible", "confidence": 0}}
-  "field_name": {{"value": null, "status": "not_printed", "confidence": 100}}
-Use status "not_visible" when the image does not contain readable evidence.
-Use status "not_printed" ONLY when the visible artwork clearly shows the declaration is absent.
-Use status "uncertain" when the visible text is ambiguous.
-Preserve numbers exactly where possible. Distinguish MRP, net quantity, batch number,
-manufacturing/packing date, expiry date, FSSAI number, and customer-care contacts.
+    On model failure the pipeline must not invent values: every field is
+    reported as not_visible with confidence 0 and ``image_quality_flag`` true.
+    """
+    raw_text = ""
+    try:
+        ocr_result = OCRService.process_image(image_url)
+        if isinstance(ocr_result, dict):
+            raw_text = ocr_result.get("raw_text") or ocr_result.get("text") or ""
+    except Exception as exc:  # OCR must never break the degradation path
+        logger.warning("OCR fallback failed during vision degradation: %s", exc)
 
-Return exactly these keys:
-{fields}"""
+    extraction = ProductExtraction(image_quality_flag=True, raw_text=raw_text or None)
+    return _extraction_to_fields(extraction)
 
 
-class OpenAICompatibleProvider(VisionProvider):
-    name = "openai"
+# ---------------------------------------------------------------------------
+# Gemini provider
+# ---------------------------------------------------------------------------
+
+
+def _fields_schema() -> str:
+    shape = '{"value": <string | null>, "confidence": <integer 0-100>}'
+    return "\n".join(f'  "{name}": {shape}' for name in PRODUCT_FIELDS)
+
+
+class GeminiProvider(VisionProvider):
+    name = "gemini"
 
     @property
     def _api_key(self) -> str:
-        return settings.VISION_API_KEY.strip() or settings.OPENAI_API_KEY.strip()
+        return (settings.GEMINI_API_KEY or "").strip()
+
+    @property
+    def _model_name(self) -> str:
+        return (settings.VISION_MODEL or "gemini-2.5-flash").strip()
 
     def is_configured(self) -> bool:
-        return bool(self._api_key and settings.VISION_MODEL.strip())
+        return HAS_GENAI and bool(self._api_key and self._model_name)
 
     def extract(self, image_url: str) -> Dict[str, ProductField]:
         if not image_url:
             raise VisionExtractionError("No image URL was provided to the vision provider.")
-
-        prompt = _PROMPT_TEMPLATE.format(fields=", ".join(PRODUCT_FIELDS))
-        payload = {
-            "model": settings.VISION_MODEL,
-            "temperature": 0,
-            "max_tokens": 2000,
-            "response_format": {"type": "json_object"},
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {"type": "image_url", "image_url": {"url": image_url, "detail": "high"}},
-                    ],
-                }
-            ],
-        }
-        request = urllib.request.Request(
-            settings.OPENAI_API_URL,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {self._api_key}",
-                "Content-Type": "application/json",
-                "User-Agent": "PackIntel-Vision-Scanner/2.0",
-            },
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=settings.VISION_TIMEOUT_SECONDS) as response:
-                response_data = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
+        if not HAS_GENAI:
             raise VisionExtractionError(
-                f"Vision provider request failed (HTTP {exc.code})."
-            ) from exc
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-            raise VisionExtractionError("Vision provider request failed.") from exc
+                "google-genai is not installed; cannot call Gemini."
+            )
 
         try:
-            content = str(response_data["choices"][0]["message"]["content"])
-        except (KeyError, IndexError, TypeError) as exc:
-            raise VisionExtractionError("Vision provider returned no extraction content.") from exc
-        return _parse_json(content)
+            image = OCRService._fetch_image(image_url)
+        except (OSError, ValueError) as exc:
+            raise VisionExtractionError(
+                f"Could not load the label image for vision extraction: {exc}"
+            ) from exc
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+
+        prompt = SYSTEM_PROMPT.format(fields=_fields_schema())
+        with httpx.Client(timeout=settings.VISION_TIMEOUT_SECONDS) as http_client:
+            client = genai.Client(
+                api_key=self._api_key,
+                http_options=types.HttpOptions(httpx_client=http_client),
+            )
+            try:
+                response = client.models.generate_content(
+                    model=self._model_name,
+                    contents=[
+                        image,
+                        "Extract the packaged commodity label fields as JSON matching the schema above.",
+                    ],
+                    config=types.GenerateContentConfig(
+                        system_instruction=prompt,
+                        temperature=0,
+                        response_mime_type="application/json",
+                    ),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Gemini vision request failed; wrapping OCR output instead: %s", exc
+                )
+                return _ocr_fallback_extraction(image_url)
+
+        try:
+            text = str(response.text or "")
+        except (ValueError, AttributeError) as exc:
+            logger.warning(
+                "Gemini returned no usable text; wrapping OCR output instead: %s", exc
+            )
+            return _ocr_fallback_extraction(image_url)
+
+        try:
+            extraction = _parse_extraction_content(text)
+        except VisionExtractionError as exc:
+            logger.warning(
+                "Gemini output was not parseable; wrapping OCR output instead: %s", exc
+            )
+            return _ocr_fallback_extraction(image_url)
+
+        return _extraction_to_fields(extraction)
 
 
 _PROVIDERS: Dict[str, VisionProvider] = {
-    "openai": OpenAICompatibleProvider(),
+    "gemini": GeminiProvider(),
 }
 
 
 def get_vision_service() -> Optional[VisionProvider]:
-    """Return the provider selected by VISION_PROVIDER (default: openai)."""
-    provider_name = (settings.VISION_PROVIDER or "openai").strip().lower()
+    """Return the provider selected by VISION_PROVIDER (default: gemini)."""
+    provider_name = (settings.VISION_PROVIDER or "gemini").strip().lower()
     if provider_name == "none":
         return None
     provider = _PROVIDERS.get(provider_name)
     if provider is None:
-        logger.warning("Unknown VISION_PROVIDER '%s'; treating vision as disabled.", provider_name)
+        logger.warning(
+            "Unknown VISION_PROVIDER '%s'; treating vision as disabled.", provider_name
+        )
         return None
     if not provider.is_configured():
         return None
@@ -321,6 +426,6 @@ class VisionService:
         provider = get_vision_service()
         if provider is None:
             raise VisionExtractionError(
-                "No vision provider is configured (set VISION_PROVIDER/VISION_API_KEY/VISION_MODEL)."
+                "No vision provider is configured (set VISION_PROVIDER/GEMINI_API_KEY/VISION_MODEL)."
             )
         return provider.extract(image_url)

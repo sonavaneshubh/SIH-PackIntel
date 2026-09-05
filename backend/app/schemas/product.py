@@ -115,3 +115,46 @@ class ProductInformation(BaseModel):
 
     def model_dump_canonical(self) -> Dict[str, Dict[str, Any]]:
         return {name: getattr(self, name).model_dump() for name in PRODUCT_FIELDS}
+
+
+class ProductExtraction(BaseModel):
+    """Structured output schema requested from the vision LLM (Gemini).
+
+    Each canonical declaration is a ``ProductField`` (the LLM is instructed
+    to emit at least ``value`` + ``confidence`` and may omit ``status``/``source``).
+
+    Attributes:
+        image_quality_flag: true when the label image was low quality, in
+            which case every confidence score must be capped at 40.
+        raw_text: raw OCR text used by the fallback path when the API call
+            fails or times out.
+    """
+
+    image_quality_flag: bool = False
+    raw_text: Optional[str] = None
+    brand_or_commodity_name: ProductField = Field(default_factory=field)
+    generic_name: ProductField = Field(default_factory=field)
+    net_quantity: ProductField = Field(default_factory=field)
+    quantity_unit: ProductField = Field(default_factory=field)
+    manufacturer_name: ProductField = Field(default_factory=field)
+    manufacturer_address: ProductField = Field(default_factory=field)
+    packer_name: ProductField = Field(default_factory=field)
+    packer_address: ProductField = Field(default_factory=field)
+    marketer_name: ProductField = Field(default_factory=field)
+    marketer_address: ProductField = Field(default_factory=field)
+    mrp: ProductField = Field(default_factory=field)
+    mrp_tax_inclusive: ProductField = Field(default_factory=field)
+    unit_sale_price: ProductField = Field(default_factory=field)
+    packing_date: ProductField = Field(default_factory=field)
+    manufacturing_date: ProductField = Field(default_factory=field)
+    expiry_date: ProductField = Field(default_factory=field)
+    batch_number: ProductField = Field(default_factory=field)
+    customer_care_name: ProductField = Field(default_factory=field)
+    customer_care_phone: ProductField = Field(default_factory=field)
+    toll_free_number: ProductField = Field(default_factory=field)
+    customer_care_email: ProductField = Field(default_factory=field)
+    country_of_origin: ProductField = Field(default_factory=field)
+    vegetarian_mark: ProductField = Field(default_factory=field)
+    non_vegetarian_mark: ProductField = Field(default_factory=field)
+    fssai_number: ProductField = Field(default_factory=field)
+    certifications: ProductField = Field(default_factory=field)
