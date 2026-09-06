@@ -1,103 +1,12 @@
 'use client';
 
-import React, { Suspense, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { AppShell } from '@/components/layout/AppShell';
-import { Button } from '@/components/ui/Button';
-import { supabase } from '@/lib/supabase/client';
-import { getSignedImageUrl, normalizeExtractedLabel } from '@/lib/supabase/inspectionService';
-import { api } from '@/lib/api';
-import { Inspection, ComplianceResultRow, ExtractedLabel, InspectionImage, ExtractedField } from '@/types/database';
-import { CONFLICT_SENSITIVE_FIELDS, PRODUCT_FIELDS, parseProductInformation, ProductField } from '@/types/product';
+import React, { Suspense } from 'react';
+import { ReportView } from '@/features/report/ReportView';
 
-interface ComplianceResultWithRule extends ComplianceResultRow { ruleDescription?: string; }
-
-export default function ResultsPage() { return <Suspense fallback={null}><ResultsContent /></Suspense>; }
-
-function ResultsContent() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const inspectionId = searchParams.get('inspection');
-  const [inspection, setInspection] = useState<Inspection | null>(null);
-  const [results, setResults] = useState<ComplianceResultWithRule[]>([]);
-  const [label, setLabel] = useState<ExtractedLabel | null>(null);
-  const [image, setImage] = useState<InspectionImage | null>(null);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [reportMessage, setReportMessage] = useState('');
-
-  useEffect(() => {
-    if (!inspectionId) { setError('No inspection ID was provided.'); setIsLoading(false); return; }
-    const loadReport = async () => {
-      try {
-        const { data, error: queryError } = await supabase.from('inspections').select('*, extracted_labels (*), compliance_results (*), inspection_images (*)').eq('id', inspectionId).single();
-        if (queryError) throw queryError;
-        const rawLabel = Array.isArray(data.extracted_labels)
-          ? data.extracted_labels[0]
-          : data.extracted_labels;
-        setInspection(data);
-        setLabel(normalizeExtractedLabel(rawLabel));
-        setResults(data.compliance_results || []);
-        const latestImage = data.inspection_images?.[0] || null; setImage(latestImage);
-        if (latestImage?.storage_path) { const signed = await getSignedImageUrl(latestImage.storage_path); setImageUrl(signed.url || latestImage.public_url || null); }
-      } catch { setError('We could not load this inspection.'); } finally { setIsLoading(false); }
-    };
-    void loadReport();
-  }, [inspectionId]);
-
-  const enrichedResults = useMemo(() => results.map((result) => ({ ...result, ruleDescription: result.requirement || undefined })), [results]);
-  const counts = useMemo(() => ({ verified: results.filter((result) => result.result === 'pass').length, review: results.filter((result) => result.result === 'warning').length, failed: results.filter((result) => result.result === 'fail').length, notDetected: results.filter((result) => result.result === 'not_applicable' || !result.extracted_value).length }), [results]);
-  const computedScore = results.length > 0 ? Math.round((counts.verified / results.length) * 100) : 0;
-  // Score is authoritative from the backend; fall back to a local estimate only
-  // for legacy records that have no stored compliance_score.
-  const score = inspection?.compliance_score ?? (inspection?.risk_score === 0 && inspection.overall_result === 'review' ? 0 : computedScore);
-  const status = getStatus(inspection, counts, results.length);
-  const confidence = getConfidence(label, image, score);
-  const issues = enrichedResults.filter((result) => result.result === 'fail' || result.result === 'warning' || !result.extracted_value);
-  const rawOcr = image?.ocr_text || label?.raw_ocr_text || '';
-  const productInformation = parseProductInformation(label?.product_information);
-  const pipelineMeta = parsePipelineMeta(label?.other_declarations);
-  const populatedFields = PRODUCT_FIELDS.map(({ key, label: name }) => {
-    const canonical = productInformation[key];
-    const field = isField(canonical) ? canonical : legacyProductField(key, inspection, label);
-    return { name, key, field };
-  });
-
-  const handlePdf = async () => {
-    setReportMessage('Preparing report...');
-    try { const report = await api.generateReport({ inspection_id: inspectionId || '', format: 'pdf' }); if (report.download_url.startsWith('http')) window.open(report.download_url, '_blank', 'noopener,noreferrer'); else window.print(); setReportMessage('Use “Save as PDF” in the print dialog to download this report.'); } catch { window.print(); setReportMessage('Report prepared for printing. Use “Save as PDF” to download it.'); }
-  };
-
-  if (isLoading) return <AppShell pageTitle="Inspection Report"><LoadingState /></AppShell>;
-  if (error || !inspection) return <AppShell pageTitle="Inspection Report"><ErrorState message={error || 'Inspection not found.'} onNewScan={() => router.push('/scan/new')} /></AppShell>;
-
-  return <AppShell pageTitle="Inspection Report"><main className="report-page max-w-6xl mx-auto w-full pb-12">
-    <header className="report-header flex flex-col lg:flex-row lg:items-end justify-between gap-5 border-b border-outline-variant pb-6 mb-6"><div><p className="text-xs font-bold tracking-[0.18em] text-primary uppercase mb-2">PackIntel</p><h1 className="text-3xl md:text-4xl font-bold text-on-surface">Inspection Report</h1><p className="text-sm text-on-surface-variant mt-2">Packaged Commodity Compliance Analysis</p><div className="flex flex-wrap gap-x-5 gap-y-1 mt-4 text-xs text-on-surface-variant"><span>Report ID: <strong className="text-on-surface">{inspection.inspection_number || inspection.id}</strong></span><span>Scanned: <strong className="text-on-surface">{formatDate(inspection.inspected_at || inspection.created_at)}</strong></span><span>AI-assisted inspection</span></div></div><div className="report-actions flex flex-wrap gap-2"><Button variant="secondary" icon="download" onClick={handlePdf}>Download PDF Report</Button><Button variant="outline" icon="print" onClick={() => window.print()}>Print Report</Button><Link href="/scan/new"><Button variant="primary" icon="add">New Scan</Button></Link></div></header>
-    {reportMessage && <p role="status" className="report-actions text-xs text-primary mb-4">{reportMessage}</p>}
-    <section className="grid grid-cols-1 lg:grid-cols-[1.35fr_0.65fr] gap-5 mb-6"><div className={`border rounded-xl p-6 ${status.tone}`}><div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5"><div><p className="text-xs font-bold tracking-[0.15em] uppercase opacity-75">Compliance score</p><div className="flex items-baseline gap-2 mt-2"><span className="text-6xl font-bold tracking-tight">{score}</span><span className="text-xl opacity-70">/ 100</span></div></div><div className="sm:text-right"><p className="text-2xl font-bold">{status.label}</p><p className="text-sm mt-1 max-w-sm">{status.description}</p></div></div></div><div className="border border-outline-variant rounded-xl bg-surface p-6"><p className="text-xs font-bold tracking-[0.15em] text-on-surface-variant uppercase">Inspection confidence</p><p className="text-2xl font-bold text-on-surface mt-3">{confidence.label}</p><p className="text-sm text-on-surface-variant mt-2">{confidence.reason}</p></div></section>
-    <section aria-label="Inspection summary" className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8"><SummaryItem value={counts.verified} label="Verified" tone="text-green-700" /><SummaryItem value={counts.review} label="Needs review" tone="text-amber-700" /><SummaryItem value={counts.failed} label="Failed" tone="text-red-700" /><SummaryItem value={counts.notDetected} label="Not detected" tone="text-on-surface-variant" /></section>
-    <section className="mb-8"><SectionHeading title="What did PackIntel check?" subtitle="Applicable checks from the Legal Metrology inspection engine." /><div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2 border-y border-outline-variant py-4">{enrichedResults.map((result) => <div key={result.id} className="flex gap-3 py-2 text-sm"><span className="text-primary">•</span><div><p className="font-semibold text-on-surface">{result.rule_name}</p><p className="text-on-surface-variant">{result.ruleDescription || result.requirement}</p></div></div>)}</div></section>
-    <section className="mb-8"><SectionHeading title="Compliance checklist" subtitle="Evidence is based on the information readable in the uploaded image." /><div className="border border-outline-variant rounded-xl overflow-hidden bg-surface overflow-x-auto"><table className="w-full min-w-[640px] text-left"><thead className="bg-surface-container-lowest text-xs uppercase tracking-wider text-on-surface-variant"><tr><th className="p-4">Requirement</th><th className="p-4 w-36">Result</th><th className="p-4">Explanation</th></tr></thead><tbody className="divide-y divide-outline-variant/60 text-sm">{enrichedResults.map((result) => <tr key={result.id}><td className="p-4 font-semibold text-on-surface">{result.rule_name}</td><td className="p-4"><ResultPill result={result.result} /></td><td className="p-4 text-on-surface-variant">{result.explanation || result.evidence || (result.extracted_value ? `Detected: ${result.extracted_value}` : 'This information was not detected.')}</td></tr>)}</tbody></table></div></section>
-    <section className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-8"><div className="border border-red-200 bg-red-50/60 rounded-xl p-5"><SectionHeading title="Issues found" subtitle="Items that need attention before a final determination." />{issues.length ? <div className="space-y-4">{issues.map((issue) => <div key={issue.id} className="border-l-2 border-red-400 pl-3"><div className="flex items-center gap-2"><ResultPill result={issue.result} /><span className="font-semibold text-sm text-on-surface">{issue.rule_name}</span></div><p className="text-sm text-on-surface-variant mt-1">{issue.explanation || 'PackIntel could not verify this requirement from the available image.'}</p><p className="text-xs text-on-surface-variant mt-1"><strong>Recommendation:</strong> Upload a clearer image of the relevant package panel.</p></div>)}</div> : <p className="text-sm text-green-800">No compliance issues detected in the available image.</p>}</div><div className="border border-outline-variant rounded-xl bg-surface p-5"><SectionHeading title="Product information" subtitle="Values are extracted from the package artwork; field status and confidence are preserved." /><dl className="divide-y divide-outline-variant/60">{populatedFields.map((item) => <div key={item.key} className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-4 py-2 text-sm"><dt className="text-on-surface-variant">{item.name}</dt><dd><ProductFieldValue field={item.field} sensitive={CONFLICT_SENSITIVE_FIELDS.has(item.key)} /></dd></div>)}</dl></div></section>
-    <section className="grid grid-cols-1 lg:grid-cols-[0.8fr_1.2fr] gap-5 mb-8"><div className="border border-outline-variant rounded-xl bg-surface p-5"><SectionHeading title="Source image" subtitle="The image used for this inspection." />{imageUrl ? <img src={imageUrl} alt="Uploaded product label" className="w-full max-h-72 object-contain rounded border border-outline-variant bg-surface-container-low" /> : <div className="h-48 grid place-items-center bg-surface-container-low text-sm text-on-surface-variant">Image preview unavailable</div>}</div><div className="border border-outline-variant rounded-xl bg-surface p-5"><SectionHeading title="Image and OCR quality" subtitle="Quality is separate from the compliance score." /><div className="grid grid-cols-2 gap-4 text-sm"><QualityItem label="Image quality" value={image ? 'Available' : 'Unavailable'} /><QualityItem label="OCR status" value={rawOcr ? 'Readable text found' : 'No readable text'} /><QualityItem label="OCR confidence" value={(image?.ocr_confidence ?? label?.extraction_confidence) ? `${Math.round(image?.ocr_confidence ?? label?.extraction_confidence ?? 0)}%` : 'Not available'} /><QualityItem label="Extraction source" value={formatExtractionSource(pipelineMeta)} />{pipelineMeta.vision_used && <QualityItem label="Vision fallback" value="Multi-modal verified" />}{pipelineMeta.vision_error && <div className="col-span-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2"><strong>Vision fallback unavailable:</strong> {pipelineMeta.vision_error}. Results rely on OCR only.</div>}<QualityItem label="Assessment" value={confidence.label} /></div><details className="mt-5 border-t border-outline-variant pt-4"><summary className="cursor-pointer font-semibold text-sm text-on-surface">View raw OCR text</summary><pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-surface-container-lowest p-3 text-xs text-on-surface-variant">{rawOcr || 'No readable OCR text was detected.'}</pre></details></div></section>
-    <section className="border-t border-outline-variant pt-5"><SectionHeading title="Recommendations" />{issues.length ? <ul className="list-disc pl-5 text-sm text-on-surface-variant space-y-1"><li>Upload a clearer image of the relevant package panel.</li><li>Include the complete label so every declaration can be checked.</li></ul> : <p className="text-sm text-on-surface-variant">No further action is recommended based on the available image.</p>}</section><footer className="report-footer border-t border-outline-variant mt-8 pt-5 text-xs text-on-surface-variant">PackIntel · AI-assisted packaged commodity inspection · Report generated {formatDate(new Date().toISOString())}<br /><span>This report is an AI-assisted preliminary inspection and should not be treated as a final legal determination.</span></footer>
-  </main></AppShell>;
+export default function ResultsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ReportView />
+    </Suspense>
+  );
 }
-
-function getStatus(inspection: Inspection | null, counts: { failed: number; review: number }, total: number) { if (!total || (inspection?.risk_score === 0 && inspection.overall_result === 'review')) return { label: 'Insufficient information', description: 'No readable package-label information was available for a reliable inspection.', tone: 'border-amber-300 bg-amber-50 text-amber-950' }; if (counts.failed) return { label: 'Non-compliant', description: 'One or more mandatory requirements could not be verified.', tone: 'border-red-300 bg-red-50 text-red-950' }; if (counts.review) return { label: 'Needs review', description: 'Some package information requires further review.', tone: 'border-amber-300 bg-amber-50 text-amber-950' }; return { label: 'Compliant', description: 'The available package information was detected and verified.', tone: 'border-green-300 bg-green-50 text-green-950' }; }
-function legacyProductField(key: string, inspection: Inspection | null, label: ExtractedLabel | null): ExtractedField { const values: Record<string, string | null | undefined> = { brand_or_commodity_name: label?.commodity_name || inspection?.product_name, generic_name: label?.commodity_name, net_quantity: label?.net_quantity, manufacturer_name: label?.manufacturer_name, packer_name: label?.packer_name, mrp: label?.mrp, packing_date: label?.month_year_packed, country_of_origin: label?.country_of_origin, customer_care_phone: label?.customer_care_details }; return { value: values[key] || null, status: values[key] ? 'detected' : 'not_visible', confidence: values[key] ? (label?.extraction_confidence || 0) : 0, source: values[key] ? 'ocr' : 'none' }; }
-function isField(value: unknown): value is ProductField { return !!value && typeof value === 'object' && 'status' in value && ('confidence' in value || 'source' in value); }
-function parsePipelineMeta(raw: unknown): { extraction_source?: string; vision_used?: boolean; vision_error?: string | null } { if (!raw) return {}; if (typeof raw === 'string') { try { return JSON.parse(raw); } catch { return {}; } } if (typeof raw === 'object') { const obj = raw as Record<string, unknown>; return { extraction_source: typeof obj.extraction_source === 'string' ? obj.extraction_source : undefined, vision_used: obj.vision_used === true, vision_error: typeof obj.vision_error === 'string' ? obj.vision_error : null }; } return {}; }
-function formatExtractionSource(meta: { extraction_source?: string }) { const source = meta?.extraction_source; if (source === 'ocr+vision') return 'OCR + Vision'; if (source === 'vision') return 'Vision'; return 'OCR'; }
-function sourceLabel(source: string) { if (source === 'vision') return 'Vision'; if (source === 'merged') return 'Merged'; if (source === 'user') return 'Manual'; return 'OCR'; }
-function ProductFieldValue({ field, sensitive }: { field: ProductField; sensitive?: boolean }) { const confidence = Math.round(field.confidence ?? 0); if (field.status === 'detected') return <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5"><span className="font-medium break-words text-on-surface">{field.value || 'Not Visible'}</span>{confidence > 0 ? <span className="shrink-0 text-xs text-on-surface-variant" title={`Extracted via ${sourceLabel(field.source)} at ${confidence}% confidence.`}>{confidence}% · {sourceLabel(field.source)}</span> : <span className="shrink-0 text-xs text-on-surface-variant">{sourceLabel(field.source)}</span>}</div>; if (field.status === 'uncertain') return <div className="text-amber-800"><span className="font-semibold inline-flex items-center gap-1"><span className="material-symbols-outlined text-sm">warning</span>Needs Review</span>{field.conflicts && field.conflicts.length > 0 ? <span className="block text-xs text-on-surface-variant mt-1 normal-case">{field.conflicts.map((c) => `${sourceLabel(c.source)}: ${c.value || '—'}`).join(' · ')}</span> : null}{sensitive ? <span className="block text-xs text-amber-700 mt-0.5 normal-case">OCR and vision disagree on this sensitive field.</span> : null}</div>; if (field.status === 'not_printed') return <span className="text-on-surface-variant italic">Not Printed / Unmarked</span>; return <span className="text-on-surface-variant italic">Not Visible</span>; }
-function getConfidence(label: ExtractedLabel | null, image: InspectionImage | null, score: number) { if (!image || !label?.raw_ocr_text) return { label: 'Low', reason: 'Image quality is insufficient to reliably verify package information.' }; if ((label.ocr_confidence ?? label.extraction_confidence ?? 0) < 65 || score === 0) return { label: 'Medium', reason: 'Some information was readable, but parts of the label need review.' }; return { label: 'High', reason: 'The image contained enough readable information for this preliminary inspection.' }; }
-function ResultPill({ result }: { result: string }) { const config: Record<string, { label: string; className: string }> = { pass: { label: 'Verified', className: 'text-green-700 bg-green-100' }, warning: { label: 'Needs review', className: 'text-amber-800 bg-amber-100' }, fail: { label: 'Failed', className: 'text-red-700 bg-red-100' }, not_applicable: { label: 'Not detected', className: 'text-on-surface-variant bg-surface-container-highest' } }; const item = config[result] || config.not_applicable; return <span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${item.className}`}>{item.label}</span>; }
-function SummaryItem({ value, label, tone }: { value: number; label: string; tone: string }) { return <div className="border border-outline-variant rounded-lg bg-surface p-4"><p className={`text-2xl font-bold ${tone}`}>{value}</p><p className="text-xs text-on-surface-variant mt-1">{label}</p></div>; }
-function QualityItem({ label, value }: { label: string; value: string }) { return <div><p className="text-xs text-on-surface-variant">{label}</p><p className="font-semibold text-on-surface mt-1">{value}</p></div>; }
-function SectionHeading({ title, subtitle }: { title: string; subtitle?: string }) { return <div className="mb-4"><h2 className="text-lg font-bold text-on-surface">{title}</h2>{subtitle && <p className="text-sm text-on-surface-variant mt-1">{subtitle}</p>}</div>; }
-function LoadingState() { return <div className="max-w-5xl mx-auto py-16 text-center"><span className="material-symbols-outlined text-4xl text-primary animate-spin">autorenew</span><p className="text-sm text-on-surface-variant mt-3">Preparing inspection report...</p></div>; }
-function ErrorState({ message, onNewScan }: { message: string; onNewScan: () => void }) { return <div className="max-w-md mx-auto py-16 text-center"><span className="material-symbols-outlined text-5xl text-error">error</span><h2 className="text-xl font-bold text-on-surface mt-3">Report unavailable</h2><p className="text-sm text-on-surface-variant mt-2 mb-6">{message}</p><Button variant="primary" onClick={onNewScan}>Start new scan</Button></div>; }
-function formatDate(value: string) { return new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)); }

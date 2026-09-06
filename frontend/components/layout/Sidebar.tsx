@@ -35,6 +35,12 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       isActive: pathname === "/history",
     },
     {
+      label: "Recent Inspections",
+      href: "/recent-inspections",
+      icon: "query_stats",
+      isActive: pathname === "/recent-inspections",
+    },
+    {
       label: "High-Priority Inspections",
       href: "/#high-priority",
       icon: "warning",
@@ -91,7 +97,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         {/* Logo / Header */}
         <div className="px-5 mb-6 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3 group">
-            <div className="w-6 h-6 rounded-md bg-[#0d9488] text-white flex items-center justify-center font-bold text-base transition-colors">
+            <div className="w-6 h-6 rounded-md bg-gradient-to-br from-[#1a73e8] to-[#005bbf] text-white flex items-center justify-center font-bold text-base transition-transform group-hover:scale-105">
               <span className="material-symbols-outlined text-[14px]">verified_user</span>
             </div>
             <div>
@@ -123,7 +129,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               className={cn(
                 "flex items-center gap-2 px-3 py-2 rounded-md transition-all duration-75 text-[12px] font-semibold active:scale-95",
                 item.isActive
-                  ? "text-white bg-[#111c20] border-r-[3px] border-[#2dd4bf] rounded-r-md font-bold"
+                  ? "text-white bg-[#111c20] border-r-[3px] border-[#3b82f6] rounded-r-md font-bold"
                   : "text-slate-400 hover:bg-[#111c20] hover:text-white",
               )}
             >
