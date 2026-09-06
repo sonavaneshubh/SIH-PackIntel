@@ -173,13 +173,6 @@ export function formatExtractionSource(meta: { extraction_source?: string }) {
   return 'OCR';
 }
 
-export function sourceLabel(source: string) {
-  if (source === 'gemini_vision') return 'Gemini Vision';
-  if (source === 'vision') return 'Vision';
-  if (source === 'merged') return 'Merged';
-  if (source === 'user') return 'Manual';
-  return 'OCR';
-}
 
 export interface PopulatedField {
   name: string;
@@ -188,9 +181,12 @@ export interface PopulatedField {
 }
 
 export function sourceLabel(source?: string) {
-  if (source === 'ocr') return 'OCR Extracted';
+  if (source === 'gemini_vision') return 'Gemini Vision';
+  if (source === 'vision') return 'Vision';
   if (source === 'vision_fallback') return 'Vision Assisted';
-  if (source === 'manual') return 'Manual Entry';
+  if (source === 'merged') return 'Merged';
+  if (source === 'manual' || source === 'user') return 'Manual';
+  if (source === 'ocr') return 'OCR Extracted';
   return 'Not Detected';
 }
 
