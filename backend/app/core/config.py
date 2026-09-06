@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     # re-arms the optional vision pass for future use. Off by default.
     ENABLE_VISION_FALLBACK: bool = False
 
+    # Primary Gemini Vision extraction: when enabled, Gemini analyses the
+    # actual image and returns structured product data directly, bypassing
+    # the OCR → text-normalizer → product-extractor path. Disabled by default
+    # so that existing tests run against the OCR-only pipeline.
+    GEMINI_PRIMARY_ENABLED: bool = False
+
     # Pipeline tuning (see scanning pipeline services).
     # Detection confidence below which an image is NOT considered a food
     # package (0.0-1.0). Detection failure never aborts a scan.

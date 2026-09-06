@@ -2,7 +2,7 @@
 // Single source of truth for the dynamic results grid and any future edit UI.
 
 export type ProductFieldStatus = 'detected' | 'not_printed' | 'not_visible' | 'uncertain';
-export type ProductFieldSource = 'ocr' | 'vision' | 'merged' | 'user' | 'none';
+export type ProductFieldSource = 'ocr' | 'vision' | 'merged' | 'user' | 'none' | 'gemini_vision';
 
 export interface ProductField {
   value: string | null;

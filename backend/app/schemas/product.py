@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 ProductFieldStatus = Literal["detected", "not_printed", "not_visible", "uncertain"]
-ProductFieldSource = Literal["ocr", "vision", "merged", "user", "none"]
+ProductFieldSource = Literal["ocr", "vision", "merged", "user", "none", "gemini_vision"]
 
 # Canonical schema across OCR, vision and merged results. This is the single
 # source of truth for the frontend and the compliance engine.
@@ -53,7 +53,8 @@ class ProductField(BaseModel):
     value      - printed value, or null when absent/unreadable (never invented)
     status     - detected | not_printed | not_visible | uncertain
     confidence - 0-100, real confidence from the producing source
-    source     - ocr | vision | user | none
+    source     - ocr | vision | gemini_vision | user | none
+    evidence   - exact text or visual context from the source that justifies this extraction
     conflicts  - optional debugging metadata when OCR and vision disagree
     """
 
@@ -61,6 +62,7 @@ class ProductField(BaseModel):
     status: ProductFieldStatus = "not_visible"
     confidence: float = Field(default=0.0, ge=0.0, le=100.0)
     source: ProductFieldSource = "none"
+    evidence: Optional[str] = None
     conflicts: Optional[List[Dict[str, Any]]] = None
 
 
@@ -70,6 +72,7 @@ def field(
     confidence: float = 0.0,
     source: str = "none",
     conflicts: Optional[List[Dict[str, Any]]] = None,
+    evidence: Optional[str] = None,
 ) -> ProductField:
     return ProductField(
         value=value,
@@ -77,6 +80,7 @@ def field(
         confidence=confidence,
         source=source,  # type: ignore[arg-type]
         conflicts=conflicts,
+        evidence=evidence,
     )
 
 

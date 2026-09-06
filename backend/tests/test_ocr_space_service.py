@@ -45,19 +45,19 @@ def _ok_payload(parsed_text: str, confidence: float = 94.66) -> dict:
 
 # ── Engine selection ──────────────────────────────────────────────────────────
 
-def test_get_ocr_service_always_returns_ocr_space(monkeypatch):
+def test_get_ocr_service_returns_vision_ocr_service(monkeypatch):
     monkeypatch.setenv("OCR_SPACE_API_KEY", "K-test-key")
     monkeypatch.delenv("OCR_ENGINE", raising=False)
 
-    assert isinstance(ocr_service.get_ocr_service(), OCRSpaceService)
+    assert isinstance(ocr_service.get_ocr_service(), ocr_service.OCRService)
 
 
-def test_get_ocr_service_returns_ocr_space_without_key(monkeypatch):
+def test_get_ocr_service_returns_vision_ocr_without_key(monkeypatch):
     monkeypatch.delenv("OCR_SPACE_API_KEY", raising=False)
     monkeypatch.setenv("OCR_ENGINE", "tesseract")
 
     # The scan pipeline must not silently fall back to another OCR engine.
-    assert isinstance(ocr_service.get_ocr_service(), OCRSpaceService)
+    assert isinstance(ocr_service.get_ocr_service(), ocr_service.OCRService)
 
 
 # ── Happy path ────────────────────────────────────────────────────────────────

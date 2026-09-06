@@ -147,11 +147,13 @@ export function parsePipelineMeta(raw: unknown): {
 export function formatExtractionSource(meta: { extraction_source?: string }) {
   const source = meta?.extraction_source;
   if (source === 'ocr+vision') return 'OCR + Vision';
+  if (source === 'gemini_vision') return 'Gemini Vision';
   if (source === 'vision') return 'Vision';
   return 'OCR';
 }
 
 export function sourceLabel(source: string) {
+  if (source === 'gemini_vision') return 'Gemini Vision';
   if (source === 'vision') return 'Vision';
   if (source === 'merged') return 'Merged';
   if (source === 'user') return 'Manual';

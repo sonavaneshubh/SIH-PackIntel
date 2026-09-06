@@ -45,15 +45,31 @@ export function supabaseErrorDetail(error: any): string {
 }
 
 // Logs the full Supabase error object (never just message) so failures are
-// diagnosable from the browser console.
+// diagnosable from the browser console. The first line carries the compact
+// status/code/message/details/hint summary; the object has every field.
 export function logSupabaseError(context: string, error: any): void {
-  console.error(`[${context}:SupabaseError]`, {
+  console.error(`[${context}:SupabaseError] ${supabaseErrorDetail(error)}`, {
+    name: error?.name,
     status: error?.status,
     code: error?.code,
     message: error?.message,
     details: error?.details,
     hint: error?.hint,
+    cause: error?.cause,
   });
+}
+
+// Maps a PostgREST error code to an actionable one-line diagnosis, or returns
+// an empty string when no extra guidance applies.
+function dbErrorDetail(error: any): string {
+  switch (error?.code) {
+    case 'PGRST204':
+      return 'database schema drift: a column in this build does not exist in the live Supabase table — apply the latest supabase/migrations SQL';
+    case '42501':
+      return 'row-level security policy denied the write — ensure the owner-scoped RLS policies exist in Supabase (see supabase/migrations)';
+    default:
+      return '';
+  }
 }
 
 // ─── Inspections ──────────────────────────────────────────────────────────────
@@ -537,10 +553,12 @@ export async function uploadInspectionImage(
   ];
   const safeImageType = ACCEPTED_IMAGE_TYPES.includes(imageType) ? imageType : 'label_front';
 
+  // NOTE: the live `inspection_images` table has no `public_url` column, so it
+  // must not be included here (PostgREST returns PGRST204). The signed URL is
+  // kept in the returned object and re-fetchable via getSignedImageUrl().
   const imageRecord: Record<string, any> = {
     inspection_id: inspectionId,
     storage_path: uploadedPath,
-    public_url: ocrUrl,
     image_type: safeImageType,
     file_name: file.name,
     file_size_bytes: file.size,
@@ -577,9 +595,10 @@ export async function uploadInspectionImage(
   }
 
   if (dbError) {
+    const diagnosis = dbErrorDetail(dbError);
     return {
       data: null,
-      error: `Image saved to storage but failed to record in database: ${supabaseErrorDetail(dbError)}`,
+      error: `Image saved to storage but failed to record in database: ${supabaseErrorDetail(dbError)}${diagnosis ? ` (${diagnosis})` : ''}`,
     };
   }
 
