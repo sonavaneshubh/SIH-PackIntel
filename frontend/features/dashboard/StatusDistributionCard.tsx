@@ -1,67 +1,52 @@
+'use client';
+
 import React from 'react';
 import { DashboardStats } from '@/types/database';
-
-type FilterStatus = 'ALL' | 'FAIL' | 'REVIEW' | 'PASS';
+import { DashboardCard, DashboardCardHeader } from './DashboardCard';
+import { DonutChart } from '@/components/ui/DonutChart';
 
 interface StatusDistributionCardProps {
   stats: DashboardStats;
-  passPercentage: number;
-  reviewPercentage: number;
-  failPercentage: number;
-  filterStatus: FilterStatus;
-  onFilterChange: (status: FilterStatus) => void;
 }
 
-export function StatusDistributionCard({
-  stats,
-  passPercentage,
-  reviewPercentage,
-  failPercentage,
-  filterStatus,
-  onFilterChange,
-}: StatusDistributionCardProps) {
+export function StatusDistributionCard({ stats }: StatusDistributionCardProps) {
+  const total = stats.total || 0;
+  const compliant = stats.compliant;
+  const review = stats.needsReview;
+  const nonCompliant = stats.nonCompliant;
+
   const legend = [
-    { status: 'PASS' as const, label: 'Compliant (Full statutory pass)', count: stats.compliant, color: 'bg-[#0D9488]' },
-    { status: 'REVIEW' as const, label: 'Needs Review (Ambiguous)', count: stats.needsReview, color: 'bg-warning' },
-    { status: 'FAIL' as const, label: 'Non-Compliant', count: stats.nonCompliant, color: 'bg-error' },
+    { label: 'Compliant', count: compliant, percent: total ? Math.round((compliant / total) * 100) : 0, color: '#00B074' },
+    { label: 'Needs Review', count: review, percent: total ? Math.round((review / total) * 100) : 0, color: '#F5A623' },
+    { label: 'Non-compliant', count: nonCompliant, percent: total ? Math.round((nonCompliant / total) * 100) : 0, color: '#EF4444' },
   ];
 
   return (
-    <aside className="rounded-lg border border-outline-variant bg-surface-container-lowest p-4 shadow-[0_1px_1px_rgba(25,28,29,0.04)]">
-      <h2 className="text-headline-md font-headline-md text-on-surface">Status Distribution</h2>
-      <p className="mt-0.5 text-body-sm font-body-sm text-on-surface-variant">Total parsed statutory scans.</p>
-
-      <div className="flex h-40 items-center justify-center">
-        <div
-          className="relative flex size-[120px] items-center justify-center rounded-full"
-          style={{ background: stats.total > 0 ? `conic-gradient(#F59E0B 0% ${reviewPercentage}%, #0D9488 ${reviewPercentage}% ${reviewPercentage + passPercentage}%, #BA1A1A ${reviewPercentage + passPercentage}% 100%)` : '#E1E3E4' }}
-        >
-          <div className="flex size-[92px] flex-col items-center justify-center rounded-full bg-surface-container-lowest">
-            <span className="text-2xl font-bold text-on-surface">{stats.total}</span>
-            <span className="text-label-bold font-label-bold uppercase text-on-surface-variant">Total Scans</span>
-          </div>
-        </div>
+    <DashboardCard className="flex flex-col gap-4">
+      <DashboardCardHeader title="Status Distribution" subtitle={`Total passed statutory scans: ${total}`} />
+      <div className="flex items-center justify-center py-1">
+        <DonutChart
+          segments={legend.map((l) => ({ key: l.label, label: l.label, value: l.count, color: l.color }))}
+          total={total}
+          centerValue={total}
+          centerLabel="Total Scans"
+          size={150}
+          thickness={16}
+        />
       </div>
-
-      <div className="flex flex-col gap-2">
-        {legend.map((item) => (
-          <button
-            key={item.status}
-            onClick={() => onFilterChange(filterStatus === item.status ? 'ALL' : item.status)}
-            className={`flex items-center gap-2 rounded px-1 text-left text-body-sm font-body-sm text-on-surface-variant transition-colors ${filterStatus === item.status ? 'bg-surface-container-low font-label-bold' : 'hover:bg-surface-container-low'}`}
-          >
-            <span className={`size-2 shrink-0 rounded-full ${item.color}`} />
-            <span className="min-w-0 flex-1 truncate">{item.label}</span>
-            <span className="font-label-bold text-on-surface">{item.count}</span>
-          </button>
+      <ul className="flex flex-col gap-2">
+        {legend.map((l) => (
+          <li key={l.label} className="flex items-center justify-between gap-3 text-[13px]">
+            <span className="flex min-w-0 items-center gap-2.5 text-[#475569]">
+              <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: l.color }} />
+              <span className="truncate">{l.label}</span>
+            </span>
+            <span className="shrink-0 font-semibold text-[#334155]">
+              {l.percent}% · {l.count}
+            </span>
+          </li>
         ))}
-      </div>
-
-      <div className="my-3 border-t border-outline-variant" />
-      <div className="flex items-start gap-2 text-body-sm font-body-sm text-on-surface-variant">
-        <span className="material-symbols-outlined text-[14px] text-[#0D9488]">info</span>
-        <p>All active statutory scans are synchronized with Rule Engine database.</p>
-      </div>
-    </aside>
+      </ul>
+    </DashboardCard>
   );
 }

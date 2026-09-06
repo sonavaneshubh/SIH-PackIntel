@@ -2,13 +2,29 @@
 
 import React, { useCallback, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, Camera, ChevronRight, CloudUpload, Copy, Cpu, Download, History, Package, TrendingDown, TrendingUp, Video } from 'lucide-react';
+import {
+  ArrowRight,
+  Camera,
+  ChevronRight,
+  CloudUpload,
+  Copy,
+  Cpu,
+  Download,
+  History,
+  Package,
+  Video,
+} from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/Button';
+import { Card, CardHeader } from '@/components/ui/Card';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { StatCard } from '@/components/ui/StatCard';
+import { Stepper } from '@/components/ui/Stepper';
 import { ScanPipelineState, useScanPipeline } from '@/lib/hooks/useScanPipeline';
 import { CameraScanner } from '@/components/CameraScanner';
 
 const pipelineSteps = ['Capture', 'AI Analysis', 'OCR Extract', 'Compliance', 'Report'];
+
 const quickOperations = [
   { title: 'Inspection Logs', description: 'View past legal inspections & files.', icon: History, href: '/history' },
   { title: 'Saved Templates', description: 'Reuse custom metadata overlays.', icon: Copy, href: '/settings' },
@@ -56,40 +72,176 @@ export function NewScanView() {
 
   return (
     <AppShell pageTitle="New Compliance Scan">
-      <div className="mx-auto max-w-[1320px]">
-        <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_384px]">
-          <div className="flex min-w-0 flex-col gap-6">
-            <section className="rounded-xl border border-[#e2e8f0] bg-white p-4 shadow-[0_4px_6px_rgba(0,0,0,0.02)] sm:p-6">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div><h1 className="text-base font-bold text-[#1e293b]">AI Product Scanner</h1><p className="mt-1 text-xs text-[#64748b]">Align label elements within boundaries. Calibration active.</p></div>
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-[#00bfa5]"><Cpu size={14} aria-hidden="true" />PackIntel v2 AI Eng</div>
+      <PageHeader
+        eyebrow="Compliance Inspection"
+        title="New Compliance Scan"
+        subtitle="Run a fresh legal metrology inspection — capture or upload a package label and let the PackIntel AI engine extract and verify statutory declarations."
+        status={
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-0.5 text-xs font-label-bold text-primary">
+            <Cpu size={13} aria-hidden="true" /> PackIntel v2 AI Engine
+          </span>
+        }
+      />
+
+      <div className="mx-auto grid max-w-[1320px] grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="flex min-w-0 flex-col gap-6">
+          {/* Scanner Card */}
+          <Card className="flex flex-col gap-4">
+            <CardHeader
+              title="AI Product Scanner"
+              subtitle="Align label elements within the capture frame. Calibration active."
+              actions={
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-label-bold text-emerald-700">
+                  <span className="size-1.5 rounded-full bg-emerald-500" /> Calibration active
+                </span>
+              }
+            />
+
+            {showCamera ? (
+              <CameraScanner
+                onScanComplete={handleCameraScanComplete}
+                onClose={() => setShowCamera(false)}
+                isProcessing={isProcessing}
+              />
+            ) : uploadedImageUrl ? (
+              <div className="overflow-hidden rounded-xl border border-outline-variant bg-[#0a0d14]">
+                <img
+                  src={uploadedImageUrl}
+                  alt="Uploaded product label"
+                  className="h-[220px] w-full object-contain sm:h-[300px]"
+                />
               </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isProcessing}
+                className="flex h-[220px] flex-col items-center justify-center rounded-xl border-2 border-dashed border-outline-variant bg-surface-container-low px-6 text-center transition-colors hover:border-primary/50 hover:bg-primary/5 sm:h-[300px]"
+              >
+                <span className="mb-4 flex size-14 items-center justify-center rounded-full border-2 border-primary bg-primary/10 text-primary">
+                  <Camera size={22} aria-hidden="true" />
+                </span>
+                <p className="text-sm font-semibold text-on-surface">Point camera at product label</p>
+                <p className="mt-1 font-mono text-[11px] text-on-surface-variant">
+                  ISO Auto · Target AutoFocus · 60 FPS
+                </p>
+                <p className="mt-3 text-xs text-on-surface-variant">or choose an image file below</p>
+              </button>
+            )}
 
-              {showCamera ? <CameraScanner onScanComplete={handleCameraScanComplete} onClose={() => setShowCamera(false)} isProcessing={isProcessing} /> : uploadedImageUrl ? (
-                <div className="mt-6 overflow-hidden rounded-lg bg-[#0a0d14]"><img src={uploadedImageUrl} alt="Uploaded product label" className="h-[240px] w-full object-contain sm:h-[320px]" /></div>
-              ) : (
-                <div className="mt-6 flex h-[240px] flex-col items-center justify-center rounded-lg bg-[#0a0d14] px-6 text-center sm:h-[320px]"><div className="mb-4 flex size-12 items-center justify-center rounded-full border-2 border-[#00bfa5] bg-[#00bfa5]/20 text-[#00bfa5]"><Camera size={20} aria-hidden="true" /></div><p className="text-sm font-semibold text-white">Point camera at product label</p><p className="mt-1 font-mono text-[11px] text-[#94a3b8]">ISO Auto | Target AutoFocus</p></div>
-              )}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap gap-2.5">
+                <Button
+                  variant="primary"
+                  size="lg"
+                  onClick={() => setShowCamera(true)}
+                  disabled={isProcessing}
+                >
+                  <Video size={17} aria-hidden="true" />
+                  {isProcessing ? 'Analyzing...' : 'Start Camera Scan'}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isProcessing}
+                >
+                  <CloudUpload size={17} aria-hidden="true" /> Upload Image Instead
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="sr-only"
+                  onChange={handleFileChange}
+                />
+              </div>
+              <p className="text-[11px] text-on-surface-variant">
+                Supported labels: JPG, PNG, WEBP · max 15MB
+              </p>
+            </div>
+          </Card>
 
-              <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex flex-wrap gap-3"><Button variant="primary" onClick={() => setShowCamera(true)} disabled={isProcessing}><Video size={16} aria-hidden="true" />{isProcessing ? 'Analyzing...' : 'Start Camera Scan'}</Button><Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isProcessing}><CloudUpload size={16} aria-hidden="true" />Upload Image Instead</Button><input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={handleFileChange} /></div><p className="text-[11px] text-[#64748b]">Supported labels: JPG, PNG, WEBP max 15MB.</p></div>
-            </section>
+          {/* Pipeline Card */}
+          <Card className="flex flex-col gap-4">
+            <CardHeader
+              title="Active Analysis Pipeline"
+              subtitle="Automated stages performed after a successful capture."
+            />
+            <Stepper
+              steps={pipelineSteps.map((label) => ({ id: label, label }))}
+              currentIndex={activePipelineStep}
+              className="px-1 pb-1"
+            />
+          </Card>
 
-            <section className="rounded-xl border border-[#e2e8f0] bg-white p-5"><p className="text-xs font-bold uppercase text-[#64748b]">Active Analysis Pipeline</p><div className="mt-4 flex flex-wrap items-center gap-2 sm:flex-nowrap">{pipelineSteps.map((step, index) => { const status = index < activePipelineStep ? 'complete' : index === activePipelineStep ? 'active' : 'pending'; return <React.Fragment key={step}><div className="flex min-w-0 flex-1 items-center gap-2"><span className={`flex size-6 shrink-0 items-center justify-center rounded-full border font-mono text-[11px] font-bold ${status === 'complete' ? 'border-[#00bfa5] bg-[#e0f7f4] text-[#00bfa5]' : status === 'active' ? 'border-[#00bfa5] bg-[#00bfa5] text-white' : 'border-[#e2e8f0] bg-[#f3f5f8] text-[#64748b]'}`}>{status === 'complete' ? '✓' : index + 1}</span><span className={`truncate text-xs ${status === 'active' ? 'font-bold text-[#1e293b]' : status === 'complete' ? 'font-semibold text-[#00bfa5]' : 'text-[#64748b]'}`}>{step}</span></div>{index < pipelineSteps.length - 1 && <ArrowRight size={12} className="hidden shrink-0 text-[#94a3b8] sm:block" aria-hidden="true" />}</React.Fragment>; })}</div></section>
-            {state.error && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{state.error}</p>}
-          </div>
-
-          <aside className="flex flex-col gap-6"><section><h2 className="mb-3 text-xs font-bold uppercase text-[#64748b]">Compliance Metrics (24h)</h2><div className="flex flex-col gap-2.5"><MetricCard label="Total Scans" /><MetricCard label="Compliance Rate" /><MetricCard label="Pending Reviews" /></div></section>
-            <section className="rounded-xl border border-[#e2e8f0] bg-white p-5"><h2 className="text-[13px] font-bold text-[#1e293b]">Quick Operations</h2><div className="mt-3 flex flex-col gap-2">{quickOperations.map(({ title, description, icon: Icon, href }) => <button key={title} type="button" onClick={() => router.push(href)} className="flex items-center gap-3 rounded-lg border border-[#e2e8f0] p-3 text-left transition-colors hover:border-[#00bfa5]"><span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-[#e0f7f4] text-[#00bfa5]"><Icon size={16} aria-hidden="true" /></span><span className="min-w-0 flex-1"><span className="block text-[13px] font-semibold text-[#1e293b]">{title}</span><span className="block truncate text-[11px] text-[#64748b]">{description}</span></span><ChevronRight size={14} className="shrink-0 text-[#94a3b8]" aria-hidden="true" /></button>)}</div></section>
-            <section className="rounded-xl border border-[#e2e8f0] bg-white p-5"><div className="flex items-center justify-between"><h2 className="text-[13px] font-bold text-[#1e293b]">Recent Scanner Logs</h2><span className="text-[11px] font-semibold text-[#00bfa5]">Realtime</span></div><p className="mt-4 text-xs text-[#64748b]">Live inspection records will appear here after a scan is completed.</p></section>
-          </aside>
+          {/* Pipeline error banner */}
+          {state.error && (
+            <p
+              role="alert"
+              className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+            >
+              {state.error}
+            </p>
+          )}
         </div>
+
+        <aside className="flex flex-col gap-6">
+          {/* Compliance metrics */}
+          <section aria-label="Compliance metrics">
+            <h2 className="mb-3 text-label-bold font-label-bold uppercase tracking-wider text-on-surface-variant">
+              Compliance Metrics (24h)
+            </h2>
+            <div className="flex flex-col gap-3">
+              <StatCard label="Total Scans" value="—" icon="analytics" tone="primary" detail="Awaiting live data" />
+              <StatCard label="Compliance Rate" value="—" icon="verified_user" tone="success" detail="Awaiting live data" />
+              <StatCard label="Pending Reviews" value="—" icon="rule" tone="warning" detail="Awaiting live data" />
+            </div>
+          </section>
+
+          {/* Quick operations */}
+          <Card className="flex flex-col gap-3">
+            <CardHeader title="Quick Operations" />
+            <div className="flex flex-col gap-2">
+              {quickOperations.map(({ title, description, icon: Icon, href }) => (
+                <button
+                  key={title}
+                  type="button"
+                  onClick={() => router.push(href)}
+                  className="group flex cursor-pointer items-center gap-3 rounded-lg border border-outline-variant p-3 text-left transition-colors hover:border-primary/40 hover:bg-surface-container-low"
+                >
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-on-primary">
+                    <Icon size={16} aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-semibold text-on-surface">{title}</span>
+                    <span className="block truncate text-[11px] text-on-surface-variant">{description}</span>
+                  </span>
+                  <ChevronRight size={15} className="shrink-0 text-outline" aria-hidden="true" />
+                </button>
+              ))}
+            </div>
+          </Card>
+
+          {/* Recent logs */}
+          <Card className="flex flex-col gap-3">
+            <CardHeader
+              title="Recent Scanner Logs"
+              actions={
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
+                  <span className="size-1.5 rounded-full bg-emerald-500" />
+                  Realtime
+                </span>
+              }
+            />
+            <p className="rounded-lg border border-dashed border-outline-variant bg-surface-container-low p-4 text-center text-xs text-on-surface-variant">
+              Live inspection records will appear here after a scan is completed.
+            </p>
+          </Card>
+        </aside>
       </div>
     </AppShell>
   );
-}
-
-function MetricCard({ label, value = '--', trend, positive = false }: { label: string; value?: string; trend?: string; positive?: boolean }) {
-  return <div className="rounded-lg border border-[#e2e8f0] bg-white p-4"><p className="text-[11px] font-semibold uppercase text-[#64748b]">{label}</p><div className="mt-2 flex items-end justify-between"><p className="font-mono text-2xl font-bold text-[#1e293b]">{value}</p>{trend && <span className={`flex items-center gap-0.5 text-[11px] font-semibold ${positive ? 'text-emerald-500' : 'text-red-500'}`}>{positive ? <TrendingUp size={12} aria-hidden="true" /> : <TrendingDown size={12} aria-hidden="true" />}{trend}</span>}</div></div>;
 }
 
 function getPipelineStep(step: ScanPipelineState['step']): number {
@@ -97,6 +249,5 @@ function getPipelineStep(step: ScanPipelineState['step']): number {
   if (step === 'uploading' || step === 'ocr' || step === 'extracting') return 2;
   if (step === 'compliance') return 3;
   if (step === 'completed') return 4;
-  if (step === 'error') return 0;
   return 0;
 }

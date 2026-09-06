@@ -57,7 +57,7 @@ export function AppShell({ children, pageTitle }: AppShellProps) {
           pageTitle={pageTitle}
           onMenuToggle={() => setSidebarOpen((prev) => !prev)}
         />
-        <main className="flex-1 bg-background p-3 md:p-4 overflow-y-auto">
+        <main className="flex-1 bg-[#F4F7FC] p-4 md:p-6 overflow-y-auto">
           {children}
         </main>
         <Footer />
