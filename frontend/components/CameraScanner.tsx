@@ -1,268 +1,786 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Camera, CircleAlert, RotateCcw, X } from 'lucide-react';
+import {
+  Camera,
+  CameraOff,
+  Check,
+  CheckCircle2,
+  CircleAlert,
+  Redo2,
+  Rotate3D,
+  ShieldAlert,
+  VideoOff,
+} from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import {
+  CameraFailureInfo,
+  ObjectCategory,
+  ScannerPhase,
+  ScannerState,
+} from '@/types/scanner';
+import {
+  assessCaptureQuality,
+  frameSignature,
+  heuristicPackageDetector,
+  signatureDiff,
+} from '@/lib/scanner/packageDetector';
+
+export interface CaptureSideResult {
+  side: ScannerPhase;
+  file: File;
+  objectUrl: string;
+  clientQuality: {
+    sharpness: number;
+    lighting: number;
+    centering: number;
+  };
+}
 
 export interface CameraScannerProps {
-  onScanComplete?: (file: File) => void;
-  onClose?: () => void;
-  isProcessing?: boolean;
+  onCaptureComplete: (capture: { front: CaptureSideResult | null; back: CaptureSideResult | null }) => void;
+  onSideCaptured?: (result: CaptureSideResult) => void;
+  onCameraStateChange?: (state: ScannerState) => void;
 }
 
-type DetectionStatus = 'searching' | 'detected' | 'steady' | 'capturing' | 'manual';
-
-interface FrameQuality {
-  ready: boolean;
-  message: string;
-  centerX: number;
-  centerY: number;
-}
-
-const ANALYSIS_INTERVAL_MS = 180;
-const STABILITY_DURATION_MS = 950;
+const ANALYSIS_INTERVAL_MS = 160;
+const STABILITY_DURATION_MS = 1100;
+const TURN_DELAY_MS = 1400;
+const FRAME_CHANGE_THRESHOLD = 0.1;
+const FRAME_CHANGE_HOLDS = 3;
 const MIN_CAPTURE_WIDTH = 320;
 
-function inspectFrame(video: HTMLVideoElement, canvas: HTMLCanvasElement): FrameQuality {
-  const analysisWidth = 320;
-  const analysisHeight = Math.max(180, Math.round(analysisWidth * (video.videoHeight / video.videoWidth)));
-  canvas.width = analysisWidth;
-  canvas.height = analysisHeight;
-  const context = canvas.getContext('2d', { willReadFrequently: true });
-  if (!context) return { ready: false, message: 'Searching for label...', centerX: 0.5, centerY: 0.5 };
+export const STATUS_LABELS: Record<ScannerState, string> = {
+  initializing: 'Initializing camera',
+  permission_required: 'Waiting for camera permission',
+  camera_ready: 'Camera Ready',
+  searching_for_package: 'Searching for food package',
+  package_detected: 'Food package detected',
+  stabilizing: 'Hold steady',
+  capturing_front: 'Capturing front',
+  front_captured: 'Front captured',
+  turn_package: 'Turn package around',
+  searching_back: 'Searching for back side',
+  back_detected: 'Back side detected',
+  capturing_back: 'Capturing back',
+  processing: 'Processing',
+  completed: 'Completed',
+  camera_error: 'Camera error',
+  permission_denied: 'Camera access blocked',
+};
 
-  context.drawImage(video, 0, 0, analysisWidth, analysisHeight);
-  const pixels = context.getImageData(0, 0, analysisWidth, analysisHeight).data;
-  const left = Math.round(analysisWidth * 0.1);
-  const right = Math.round(analysisWidth * 0.9);
-  const top = Math.round(analysisHeight * 0.12);
-  const bottom = Math.round(analysisHeight * 0.88);
-  const backgroundSamples: number[] = [];
-  const luminanceAt = (column: number, row: number) => {
-    const offset = (row * analysisWidth + column) * 4;
-    return pixels[offset] * 0.299 + pixels[offset + 1] * 0.587 + pixels[offset + 2] * 0.114;
+const SCANNING_PHASES: ScannerState[] = [
+  'camera_ready',
+  'searching_for_package',
+  'package_detected',
+  'stabilizing',
+  'turn_package',
+  'searching_back',
+  'back_detected',
+];
+
+const MAX_CAMERA_RETRIES = 3;
+const CAMERA_RETRY_DELAY_MS = 1500;
+
+function toCameraFailure(error: unknown): CameraFailureInfo {
+  const name = (error as DOMException)?.name ?? '';
+  const messages: Record<CameraFailureInfo['reason'], string> = {
+    none: '',
+    not_allowed:
+      'Camera permission was denied. Allow camera access in your browser settings and try again.',
+    not_found: 'No camera was detected on this device. Upload package images instead.',
+    not_readable:
+      'The camera could not be started. Check camera permissions and make sure another application is not using it.',
+    overconstrained: 'The camera could not match the requested configuration.',
+    security: 'Camera access was blocked by your browser security settings.',
+    unsupported: 'Camera scanning is not supported in this browser. Upload package images instead.',
+    insecure_context: 'Camera requires a secure (HTTPS) connection. Upload package images instead.',
+    unknown: 'The camera could not be started. Check your browser permissions and try again.',
   };
-
-  for (let column = left; column < right; column += 8) {
-    backgroundSamples.push(luminanceAt(column, top), luminanceAt(column, bottom - 1));
-  }
-  for (let row = top; row < bottom; row += 8) {
-    backgroundSamples.push(luminanceAt(left, row), luminanceAt(right - 1, row));
-  }
-  const backgroundMean = backgroundSamples.reduce((sum, value) => sum + value, 0) / Math.max(1, backgroundSamples.length);
-  let brightnessTotal = 0;
-  let brightnessSquareTotal = 0;
-  let edgeTotal = 0;
-  let readableEdges = 0;
-  let foregroundCount = 0;
-  let weightedX = 0;
-  let weightedY = 0;
-  let sampledPixels = 0;
-
-  for (let row = top + 1; row < bottom - 1; row += 3) {
-    for (let column = left + 1; column < right - 1; column += 3) {
-      const luminance = luminanceAt(column, row);
-      const horizontalEdge = Math.abs(luminance - luminanceAt(column - 1, row));
-      const verticalEdge = Math.abs(luminance - luminanceAt(column, row - 1));
-      const edgeStrength = (horizontalEdge + verticalEdge) / 2;
-      brightnessTotal += luminance;
-      brightnessSquareTotal += luminance * luminance;
-      edgeTotal += edgeStrength;
-      if (edgeStrength > 18) readableEdges++;
-      if (Math.abs(luminance - backgroundMean) > 14 || edgeStrength > 22) {
-        foregroundCount++;
-        weightedX += column;
-        weightedY += row;
-      }
-      sampledPixels++;
-    }
-  }
-
-  const brightness = brightnessTotal / sampledPixels;
-  const variance = Math.max(0, brightnessSquareTotal / sampledPixels - brightness * brightness);
-  const edgeDensity = edgeTotal / sampledPixels;
-  const readableTextDensity = readableEdges / sampledPixels;
-  const foregroundRatio = foregroundCount / sampledPixels;
-  const centerX = foregroundCount ? weightedX / foregroundCount / analysisWidth : 0.5;
-  const centerY = foregroundCount ? weightedY / foregroundCount / analysisHeight : 0.5;
-  const insideFrame = centerX >= 0.2 && centerX <= 0.8 && centerY >= 0.18 && centerY <= 0.82;
-  const sufficientlyLarge = foregroundRatio >= 0.018 && foregroundRatio <= 0.98;
-  const notBlank = variance >= 45 && edgeDensity >= 2.2 && readableTextDensity >= 0.008;
-  const adequatelyLit = brightness >= 24 && brightness <= 250;
-  const sharpEnough = edgeDensity >= 3;
-
-  if (!insideFrame) return { ready: false, message: 'Center the label', centerX, centerY };
-  if (!sufficientlyLarge) return { ready: false, message: 'Move closer', centerX, centerY };
-  if (!adequatelyLit) return { ready: false, message: 'Improve lighting', centerX, centerY };
-  if (!notBlank || !sharpEnough) return { ready: false, message: 'Searching for label...', centerX, centerY };
-  if (video.videoWidth < MIN_CAPTURE_WIDTH) return { ready: false, message: 'Move closer', centerX, centerY };
-  return { ready: true, message: 'Label detected', centerX, centerY };
+  const reason: CameraFailureInfo['reason'] =
+    name === 'NotAllowedError'
+      ? 'not_allowed'
+      : name === 'NotFoundError'
+        ? 'not_found'
+        : name === 'NotReadableError'
+          ? 'not_readable'
+          : name === 'OverconstrainedError'
+            ? 'overconstrained'
+            : name === 'SecurityError'
+              ? 'security'
+              : 'unknown';
+  return { reason, message: messages[reason] };
 }
 
-export function CameraScanner({ onScanComplete, onClose, isProcessing = false }: CameraScannerProps) {
+const isScanningOverlay = (state: ScannerState) =>
+  state === 'capturing_front' ||
+  state === 'capturing_back' ||
+  state === 'processing' ||
+  state === 'completed';
+
+export function CameraScanner({
+  onCaptureComplete,
+  onSideCaptured,
+  onCameraStateChange,
+}: CameraScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const captureCanvasRef = useRef<HTMLCanvasElement>(null);
   const analysisCanvasRef = useRef<HTMLCanvasElement>(null);
+  const signatureCanvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const cameraRetryTimerRef = useRef<number | null>(null);
   const captureLockedRef = useRef(false);
   const stableSinceRef = useRef<number | null>(null);
   const lastPositionRef = useRef<{ x: number; y: number } | null>(null);
-  const [cameraError, setCameraError] = useState<string | null>(null);
-  const [isReady, setIsReady] = useState(false);
-  const [capturedImageUrl, setCapturedImageUrl] = useState<string | null>(null);
-  const [autoCapture, setAutoCapture] = useState(true);
-  const [detectionStatus, setDetectionStatus] = useState<DetectionStatus>('searching');
-  const [guidance, setGuidance] = useState('Searching for label...');
-  const [stabilityProgress, setStabilityProgress] = useState(0);
+  const frontSignatureRef = useRef<Uint8Array | null>(null);
+  const turnHoldCountRef = useRef(0);
+  const transitionTimerRef = useRef<number | null>(null);
+  const frontSideRef = useRef<CaptureSideResult | null>(null);
+  const scanSideRef = useRef<ScannerPhase>('front');
+  const phaseRef = useRef<ScannerState>('initializing');
 
-  const stopCamera = useCallback(() => {
+  const [phase, setPhaseState] = useState<ScannerState>('initializing');
+  const [cameraError, setCameraErrorInfo] = useState<CameraFailureInfo | null>(null);
+  const [stabilityProgress, setStabilityProgress] = useState(0);
+  const [lastCategory, setLastCategory] = useState<ObjectCategory>('unknown');
+  const [frontSide, setFrontSide] = useState<CaptureSideResult | null>(null);
+  const [backSide, setBackSide] = useState<CaptureSideResult | null>(null);
+  const [scanSide, setScanSideState] = useState<ScannerPhase>('front');
+
+  const setPhase = useCallback(
+    (next: ScannerState) => {
+      phaseRef.current = next;
+      setPhaseState(next);
+      onCameraStateChange?.(next);
+    },
+    [onCameraStateChange]
+  );
+
+  const setScanSide = useCallback((next: ScannerPhase) => {
+    scanSideRef.current = next;
+    setScanSideState(next);
+  }, []);
+
+  const stopStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
-    setIsReady(false);
   }, []);
 
-  const requestCameraPermission = useCallback(async () => {
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      setCameraError('Camera scanning is not supported in this browser.');
-      return;
-    }
-    try {
-      stopCamera();
-      setCameraError(null);
-      const constraints = { video: { facingMode: { ideal: 'environment' } }, audio: false };
-      let stream: MediaStream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia(constraints);
-      } catch (error) {
-        if ((error as DOMException).name !== 'OverconstrainedError') throw error;
-        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-      }
-      streamRef.current = stream;
-      setIsReady(true);
-      setDetectionStatus('searching');
-      setGuidance('Searching for label...');
-      stableSinceRef.current = null;
-      lastPositionRef.current = null;
-    } catch (error) {
-      const cameraException = error as DOMException;
-      const message = cameraException.name === 'NotAllowedError'
-        ? 'Camera permission was denied. Allow camera access or upload an image instead.'
-        : cameraException.name === 'NotFoundError'
-          ? 'No camera was detected on this device. Upload an image instead.'
-          : cameraException.name === 'NotReadableError'
-            ? 'The camera is already in use or unavailable. Close other camera apps and try again.'
-            : 'The camera could not be started. Check your browser permissions and try again.';
-      setCameraError(message);
-    }
-  }, [stopCamera]);
+  const resetScanState = useCallback(() => {
+    stableSinceRef.current = null;
+    lastPositionRef.current = null;
+    turnHoldCountRef.current = 0;
+    setStabilityProgress(0);
+    setLastCategory('unknown');
+  }, []);
 
-  useEffect(() => stopCamera, [stopCamera]);
+  const startCamera = useCallback(
+    async (firstAttempt: boolean, attempt = 0) => {
+      setCameraErrorInfo(null);
+      setPhase(firstAttempt ? 'permission_required' : 'initializing');
 
-  useEffect(() => {
-    if (!isReady || !videoRef.current || !streamRef.current) return;
-    videoRef.current.srcObject = streamRef.current;
-    void videoRef.current.play().catch(() => setCameraError('The camera preview could not be played.'));
-  }, [isReady]);
-
-  useEffect(() => () => {
-    if (capturedImageUrl) URL.revokeObjectURL(capturedImageUrl);
-  }, [capturedImageUrl]);
-
-  const captureImage = useCallback(() => {
-    if (captureLockedRef.current) return;
-    if (!isReady) {
-      void requestCameraPermission();
-      return;
-    }
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas || !video.videoWidth || !video.videoHeight) {
-      setCameraError('The camera is not ready yet. Try again in a moment.');
-      return;
-    }
-    captureLockedRef.current = true;
-    setDetectionStatus('capturing');
-    setGuidance('Capturing...');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const context = canvas.getContext('2d');
-    if (!context) {
-      captureLockedRef.current = false;
-      return;
-    }
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    canvas.toBlob((blob) => {
-      if (!blob) {
-        captureLockedRef.current = false;
-        setDetectionStatus('manual');
-        setGuidance('Capture failed. Try again.');
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+        const info = toCameraFailure({ name: 'unsupported' } as DOMException);
+        setCameraErrorInfo(info);
+        setPhase('camera_error');
         return;
       }
-      const file = new File([blob], `camera-scan-${Date.now()}.jpg`, { type: 'image/jpeg' });
-      setCapturedImageUrl(URL.createObjectURL(blob));
-      stopCamera();
-      onScanComplete?.(file);
-    }, 'image/jpeg', 0.92);
-  }, [isReady, onScanComplete, requestCameraPermission, stopCamera]);
+      if (typeof window !== 'undefined' && window.isSecureContext === false) {
+        const info = toCameraFailure({ name: 'SecurityError' } as DOMException);
+        setCameraErrorInfo({ ...info, reason: 'insecure_context' });
+        setPhase('camera_error');
+        return;
+      }
+
+      stopStream();
+      try {
+        let stream: MediaStream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: { ideal: 'environment' },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
+            audio: false,
+          });
+        } catch (error) {
+          if ((error as DOMException).name !== 'OverconstrainedError') throw error;
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        }
+
+        if (stream.getVideoTracks().length === 0) {
+          const info = toCameraFailure({ name: 'NotFoundError' } as DOMException);
+          setCameraErrorInfo(info);
+          setPhase('camera_error');
+          return;
+        }
+
+        streamRef.current = stream;
+        const video = videoRef.current;
+        if (video) {
+          video.srcObject = stream;
+          await video.play().catch(() => {
+            const info = toCameraFailure({ name: 'unknown' } as DOMException);
+            setCameraErrorInfo({
+              ...info,
+              message: 'The camera preview could not be played. Try again.',
+            });
+            setPhase('camera_error');
+          });
+        }
+        resetScanState();
+        setPhase('camera_ready');
+      } catch (error) {
+        const info = toCameraFailure(error);
+        if (
+          info.reason === 'not_readable' &&
+          attempt < MAX_CAMERA_RETRIES
+        ) {
+          if (cameraRetryTimerRef.current !== null)
+            window.clearTimeout(cameraRetryTimerRef.current);
+          cameraRetryTimerRef.current = window.setTimeout(() => {
+            void startCamera(false, attempt + 1);
+          }, CAMERA_RETRY_DELAY_MS);
+          return;
+        }
+        setCameraErrorInfo(info);
+        setPhase(info.reason === 'not_allowed' ? 'permission_denied' : 'camera_error');
+      }
+    },
+    [resetScanState, setPhase, stopStream]
+  );
 
   useEffect(() => {
-    if (!isReady || !autoCapture || captureLockedRef.current) return;
-    const analysisTimer = window.setInterval(() => {
+    void startCamera(true);
+      return () => {
+        if (transitionTimerRef.current !== null) window.clearTimeout(transitionTimerRef.current);
+        if (cameraRetryTimerRef.current !== null) window.clearTimeout(cameraRetryTimerRef.current);
+        stopStream();
+      };
+  }, [startCamera, stopStream]);
+
+  useEffect(() => {
+    if (frontSide) frontSideRef.current = frontSide;
+    if (backSide) {
+      const front = frontSideRef.current;
+      onCaptureComplete({ front, back: backSide });
+    }
+  }, [backSide, frontSide, onCaptureComplete]);
+
+  const captureSide = useCallback(
+    (side: ScannerPhase) => {
+      if (captureLockedRef.current) return;
+      const video = videoRef.current;
+      const canvas = captureCanvasRef.current;
+      const analysisCanvas = analysisCanvasRef.current;
+      if (
+        !video ||
+        !canvas ||
+        !analysisCanvas ||
+        video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
+        !video.videoWidth ||
+        !video.videoHeight
+      ) {
+        return;
+      }
+
+      captureLockedRef.current = true;
+      if (video.videoWidth < MIN_CAPTURE_WIDTH) {
+        captureLockedRef.current = false;
+        resetScanState();
+        setPhase(side === 'front' ? 'searching_for_package' : 'searching_back');
+        return;
+      }
+      const clientQuality = assessCaptureQuality(video, analysisCanvas);
+      setPhase(side === 'front' ? 'capturing_front' : 'capturing_back');
+
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const context = canvas.getContext('2d');
+      if (!context) {
+        captureLockedRef.current = false;
+        setPhase(side === 'front' ? 'searching_for_package' : 'searching_back');
+        return;
+      }
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            captureLockedRef.current = false;
+            setPhase(side === 'front' ? 'searching_for_package' : 'searching_back');
+            return;
+          }
+          const file = new File([blob], `food-package-${side}-${Date.now()}.jpg`, {
+            type: 'image/jpeg',
+          });
+          const result: CaptureSideResult = {
+            side,
+            file,
+            objectUrl: URL.createObjectURL(blob),
+            clientQuality,
+          };
+
+          if (side === 'front') {
+            frontSignatureRef.current = frameSignature(video, signatureCanvasRef.current);
+            frontSideRef.current = result;
+            setFrontSide(result);
+            setStabilityProgress(0);
+            onSideCaptured?.(result);
+            setPhase('front_captured');
+            transitionTimerRef.current = window.setTimeout(() => {
+              turnHoldCountRef.current = 0;
+              setScanSide('back');
+              setPhase('turn_package');
+            }, TURN_DELAY_MS);
+          } else {
+            setBackSide(result);
+            onSideCaptured?.(result);
+            setPhase('processing');
+          }
+          captureLockedRef.current = false;
+        },
+        'image/jpeg',
+        0.92
+      );
+    },
+    [onSideCaptured, resetScanState, setPhase, setScanSide]
+  );
+
+  useEffect(() => {
+    if (!SCANNING_PHASES.includes(phase)) return;
+    const activePhase = () => phaseRef.current;
+    const timer = window.setInterval(() => {
       const video = videoRef.current;
       const canvas = analysisCanvasRef.current;
-      if (!video || !canvas || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !video.videoWidth || !video.videoHeight || captureLockedRef.current) return;
-      const quality = inspectFrame(video, canvas);
-      const now = performance.now();
-      const lastPosition = lastPositionRef.current;
-      const isStable = Boolean(lastPosition && Math.hypot(quality.centerX - lastPosition.x, quality.centerY - lastPosition.y) < 0.035);
-      lastPositionRef.current = { x: quality.centerX, y: quality.centerY };
-
-      if (!quality.ready) {
-        stableSinceRef.current = null;
-        setStabilityProgress(0);
-        setDetectionStatus('searching');
-        setGuidance(quality.message);
+      if (
+        !video ||
+        !canvas ||
+        video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
+        !video.videoWidth ||
+        !video.videoHeight ||
+        captureLockedRef.current
+      ) {
         return;
       }
-      if (!isStable && stableSinceRef.current !== null) stableSinceRef.current = now;
-      if (stableSinceRef.current === null) stableSinceRef.current = now;
+      const currentPhase = activePhase();
+
+      if (currentPhase === 'camera_ready') {
+        setPhase('searching_for_package');
+        return;
+      }
+
+      if (currentPhase === 'turn_package') {
+        const current = frameSignature(video, signatureCanvasRef.current);
+        if (current && frontSignatureRef.current) {
+          const diff = signatureDiff(current, frontSignatureRef.current);
+          if (diff > FRAME_CHANGE_THRESHOLD) {
+            turnHoldCountRef.current += 1;
+            if (turnHoldCountRef.current >= FRAME_CHANGE_HOLDS) {
+              turnHoldCountRef.current = 0;
+              resetScanState();
+              setPhase('searching_back');
+            }
+          } else {
+            turnHoldCountRef.current = 0;
+          }
+        }
+        return;
+      }
+
+      const result = heuristicPackageDetector.analyze(video, canvas);
+      const isFoodPackage = result.detected && result.category === 'food_package';
+
+      if (!isFoodPackage) {
+        stableSinceRef.current = null;
+        lastPositionRef.current = null;
+        setStabilityProgress(0);
+        setLastCategory(result.category);
+        if (currentPhase === 'package_detected' || currentPhase === 'stabilizing' || currentPhase === 'back_detected') {
+          setPhase(currentPhase === 'back_detected' ? 'searching_back' : 'searching_for_package');
+        }
+        return;
+      }
+
+      if (!result.inFrame) {
+        stableSinceRef.current = null;
+        lastPositionRef.current = null;
+        setStabilityProgress(0);
+        setLastCategory('food_package');
+        if (currentPhase === 'package_detected' || currentPhase === 'stabilizing' || currentPhase === 'back_detected') {
+          setPhase(currentPhase === 'back_detected' ? 'searching_back' : 'searching_for_package');
+        }
+        return;
+      }
+
+      const now = performance.now();
+      const last = lastPositionRef.current;
+      const moved = last
+        ? Math.hypot(result.centerX - last.x, result.centerY - last.y)
+        : 1;
+      lastPositionRef.current = { x: result.centerX, y: result.centerY };
+      setLastCategory('food_package');
+
+      if (
+        currentPhase === 'searching_for_package' ||
+        currentPhase === 'searching_back'
+      ) {
+        stableSinceRef.current = now;
+        setPhase(
+          scanSideRef.current === 'back'
+            ? 'back_detected'
+            : 'package_detected'
+        );
+        return;
+      }
+
+      if (currentPhase === 'package_detected' || currentPhase === 'back_detected') {
+        stableSinceRef.current = now;
+        setPhase('stabilizing');
+        return;
+      }
+
+      // stabilizing
+      if (stableSinceRef.current === null) {
+        stableSinceRef.current = now;
+      } else if (moved > 0.045) {
+        stableSinceRef.current = now;
+      }
       const elapsed = now - stableSinceRef.current;
       const progress = Math.min(100, Math.round((elapsed / STABILITY_DURATION_MS) * 100));
       setStabilityProgress(progress);
-      if (progress < 100) {
-        setDetectionStatus(elapsed > 120 ? 'steady' : 'detected');
-        setGuidance(elapsed > 120 ? 'Hold steady...' : 'Label detected');
-      } else {
-        setDetectionStatus('capturing');
-        setGuidance('Capturing...');
-        captureImage();
+      if (progress >= 100) {
+        setStabilityProgress(0);
+        captureSide(scanSideRef.current);
       }
     }, ANALYSIS_INTERVAL_MS);
-    return () => window.clearInterval(analysisTimer);
-  }, [autoCapture, captureImage, isReady]);
+    return () => window.clearInterval(timer);
+  }, [captureSide, phase, resetScanState, setPhase]);
 
-  const startAnotherScan = () => {
-    captureLockedRef.current = false;
-    setCapturedImageUrl(null);
-    setDetectionStatus('searching');
-    setGuidance('Searching for label...');
-    setStabilityProgress(0);
-    void requestCameraPermission();
-  };
+  useEffect(() => {
+    return () => {
+      if (frontSide) URL.revokeObjectURL(frontSide.objectUrl);
+      if (backSide) URL.revokeObjectURL(backSide.objectUrl);
+    };
+  }, [frontSide, backSide]);
+
+  const retryCamera = useCallback(() => {
+    void startCamera(false);
+  }, [startCamera]);
+
+  const frameOverlayActive =
+    phase === 'camera_ready' ||
+    phase === 'searching_for_package' ||
+    phase === 'package_detected' ||
+    phase === 'stabilizing' ||
+    phase === 'searching_back' ||
+    phase === 'back_detected';
+
+  const isSearching =
+    phase === 'searching_for_package' || phase === 'camera_ready' || phase === 'searching_back';
+  const isDetected =
+    phase === 'package_detected' || phase === 'back_detected' || phase === 'stabilizing';
+
+  const guidance = isSearching
+    ? lastCategory === 'person'
+      ? { title: 'No food package detected', subtitle: 'Place a packaged food product inside the scanning area.' }
+      : lastCategory === 'non_food_object'
+        ? { title: 'Object detected', subtitle: 'Please place a packaged food product inside the scanning area.' }
+        : {
+            title: 'Searching for food package',
+            subtitle: 'Place a packaged food product inside the scanning frame.',
+          }
+    : isDetected
+      ? { title: 'Food package detected', subtitle: 'Hold steady...' }
+      : { title: '', subtitle: '' };
 
   return (
     <div className="mt-6">
-      <div className="relative h-[240px] overflow-hidden rounded-lg bg-[#0a0d14] sm:h-[320px]">
-        {isReady ? <video ref={videoRef} autoPlay playsInline muted className="size-full object-cover" /> : capturedImageUrl ? <img src={capturedImageUrl} alt="Captured product label" className="size-full object-contain" /> : <div className="flex size-full flex-col items-center justify-center px-6 text-center text-[#94a3b8]"><Camera size={28} /><p className="mt-3 text-sm">Starting camera...</p></div>}
-        <canvas ref={canvasRef} className="hidden" /><canvas ref={analysisCanvasRef} className="hidden" />
-        <div className="pointer-events-none absolute inset-6 border-2 border-[#00bfa5] [clip-path:polygon(0_0,12%_0,12%_2px,2px_2px,2px_12%,0_12%,0_0,100%_0,100%_12%,calc(100%_-_2px)_12%,calc(100%_-_2px)_2px,88%_2px,88%_0,100%_0,100%_100%,88%_100%,88%_calc(100%_-_2px),calc(100%_-_2px)_calc(100%_-_2px),calc(100%_-_2px)_88%,100%_88%,100%_100%,0_100%,0_88%,2px_88%,2px_calc(100%_-_2px),12%_calc(100%_-_2px),12%_100%,0_100%)]" />
-        {isReady && <div className="absolute inset-0 flex flex-col items-center justify-center"><div className="flex size-12 items-center justify-center rounded-full border-2 border-[#00bfa5] bg-[#00bfa5]/20 text-[#00bfa5]"><Camera size={20} /></div><p className="mt-4 text-sm font-semibold text-white">{guidance}</p><p className="mt-1 font-mono text-[11px] text-[#94a3b8]">ISO Auto | Target AutoFocus</p>{stabilityProgress > 0 && <div className="mt-3 h-1 w-32 overflow-hidden rounded-full bg-white/20"><div className="h-full bg-[#00bfa5] transition-[width]" style={{ width: `${stabilityProgress}%` }} /></div>}</div>}
-        {isProcessing && <div className="absolute inset-0 flex items-center justify-center bg-black/55"><p className="rounded bg-black/70 px-4 py-2 text-sm font-semibold text-white">Analyzing package...</p></div>}
-        <div className="absolute bottom-6 left-6 rounded bg-black/50 px-2 py-1 font-mono text-[10px] text-white"><span className="mr-1 text-[#00bfa5]">●</span>{isReady ? 'CAM_FEED_ACTIVE // 60 FPS' : 'CAM_FEED_INACTIVE'}</div>
-        {cameraError && <div className="absolute inset-x-4 bottom-4 flex items-center gap-2 rounded bg-red-950/90 px-3 py-2 text-xs text-red-100"><CircleAlert size={14} className="shrink-0" />{cameraError}</div>}
+      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-[#0a0d14] sm:aspect-video">
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          aria-label="Live camera feed for food package scanning"
+          className="size-full object-cover"
+        />
+        <canvas ref={captureCanvasRef} className="hidden" />
+        <canvas ref={analysisCanvasRef} className="hidden" />
+        <canvas ref={signatureCanvasRef} className="hidden" />
+
+        <div
+          className={`absolute inset-x-0 top-0 z-10 flex items-center justify-between px-4 py-3`}
+        >
+          <span className="rounded bg-black/55 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-[#cbd5e1] backdrop-blur-sm">
+            Step {scanSide === 'front' ? '1' : '2'} of 2 — Scan {scanSide === 'front' ? 'Front' : 'Back'} Side
+          </span>
+          {phase === 'turn_package' && (
+            <span className="flex items-center gap-1.5 rounded bg-[#00bfa5]/15 px-2.5 py-1 text-[11px] font-semibold text-[#00bfa5] backdrop-blur-sm">
+              <span className="relative flex size-1.5">
+                <span className="scanner-dot-ping absolute inline-flex size-full rounded-full bg-[#00bfa5]" />
+                <span className="relative inline-flex size-1.5 rounded-full bg-[#00bfa5]" />
+              </span>
+              Auto scanning enabled
+            </span>
+          )}
+        </div>
+
+        {frameOverlayActive && (
+          <div className="pointer-events-none absolute inset-0 z-[5]">
+            <div
+              className={`absolute inset-[6%] rounded-2xl border-2 transition-all duration-300 ${
+                phase === 'stabilizing' || phase === 'package_detected' || phase === 'back_detected'
+                  ? 'scanner-detected-glow border-[#00bfa5]'
+                  : 'scanner-border-active border-[#00bfa5]/60'
+              }`}
+            />
+            <div className="absolute inset-[6%] rounded-2xl">
+              {['top-left', 'top-right', 'bottom-left', 'bottom-right'].map((corner) => (
+                <span
+                  key={corner}
+                  className={`absolute size-6 border-[#00bfa5] ${
+                    corner === 'top-left' ? 'left-0 top-0 border-l-[3px] border-t-[3px] rounded-tl-2xl' : ''
+                  }${
+                    corner === 'top-right' ? 'right-0 top-0 border-r-[3px] border-t-[3px] rounded-tr-2xl' : ''
+                  }${
+                    corner === 'bottom-left' ? 'bottom-0 left-0 border-b-[3px] border-l-[3px] rounded-bl-2xl' : ''
+                  }${
+                    corner === 'bottom-right' ? 'bottom-0 right-0 border-b-[3px] border-r-[3px] rounded-br-2xl' : ''
+                  }`}
+                />
+              ))}
+            </div>
+            {phase === 'searching_for_package' || phase === 'camera_ready' || phase === 'searching_back' ? (
+              <div className="scanner-scan-line absolute inset-x-[9%] h-[2px] rounded-full bg-gradient-to-r from-transparent via-[#2dd4bf]/80 to-transparent" />
+            ) : null}
+          </div>
+        )}
+
+        {frameOverlayActive && (
+          <div className="pointer-events-none absolute inset-0 z-[6] flex flex-col items-center justify-center px-6 text-center">
+            <div className="scanner-fade-in-up flex flex-col items-center rounded-lg bg-black/40 px-4 py-2 backdrop-blur-[2px]">
+              <p className="text-sm font-semibold text-white">{guidance.title}</p>
+              <p className="mt-0.5 text-[11px] text-[#cbd5e1]">{guidance.subtitle}</p>
+            </div>
+            {(phase === 'stabilizing' || phase === 'package_detected' || phase === 'back_detected') && (
+              <div className="mt-3 flex flex-col items-center">
+                <div className="h-1 w-40 overflow-hidden rounded-full bg-white/20">
+                  <div
+                    className="h-full rounded-full bg-[#00bfa5] transition-[width] duration-150 ease-linear"
+                    style={{ width: `${stabilityProgress}%` }}
+                  />
+                </div>
+                <p className="mt-1.5 font-mono text-[10px] text-[#00bfa5]">
+                  {stabilityProgress}% stable
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {phase === 'front_captured' && (
+          <div className="scanner-fade-in-up absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/45 backdrop-blur-sm">
+            <span className="scanner-check-pop flex size-14 items-center justify-center rounded-full bg-[#00bfa5] text-white">
+              <Check size={28} aria-hidden="true" />
+            </span>
+            <p className="mt-3 text-base font-bold text-white">Front side captured</p>
+          </div>
+        )}
+
+        {phase === 'turn_package' && (
+          <div className="scanner-fade-in-up absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/55 px-6 text-center backdrop-blur-sm">
+            <span className="scanner-check-pop flex size-14 items-center justify-center rounded-full bg-[#00bfa5] text-white">
+              <Rotate3D size={26} aria-hidden="true" />
+            </span>
+            <p className="mt-3 text-base font-bold text-white">Turn the package around</p>
+            <p className="mt-1 text-xs text-[#cbd5e1]">Scan the BACK SIDE</p>
+            <p className="mt-3 flex items-center gap-1.5 text-[11px] font-semibold text-[#00bfa5]">
+              <span className="relative flex size-1.5">
+                <span className="scanner-dot-ping absolute inline-flex size-full rounded-full bg-[#00bfa5]" />
+                <span className="relative inline-flex size-1.5 rounded-full bg-[#00bfa5]" />
+              </span>
+              Auto scanning enabled
+            </p>
+          </div>
+        )}
+
+        {phase === 'permission_required' && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-[#0a0d14] px-6 text-center">
+            <span className="flex size-12 items-center justify-center rounded-full border-2 border-[#00bfa5] bg-[#00bfa5]/15 text-[#00bfa5]">
+              <Camera size={20} aria-hidden="true" />
+            </span>
+            <p className="mt-3 text-[15px] font-bold text-white">Camera Access Required</p>
+            <p className="mt-1.5 max-w-[300px] text-xs leading-relaxed text-[#94a3b8]">
+              PackIntel needs camera access to scan the food package and inspect its label.
+            </p>
+            <p className="mt-1.5 text-xs text-[#cbd5e1]">Allow camera access in your browser to continue.</p>
+            <p className="mt-4 flex items-center gap-2 text-[11px] font-semibold text-[#00bfa5]">
+              <span className="size-3 animate-spin rounded-full border-2 border-[#00bfa5]/30 border-t-[#00bfa5]" />
+              Waiting for camera permission...
+            </p>
+          </div>
+        )}
+
+        {phase === 'permission_denied' && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-[#0a0d14] px-6 text-center">
+            <span className="flex size-12 items-center justify-center rounded-full border-2 border-amber-400 bg-amber-400/15 text-amber-400">
+              <ShieldAlert size={20} aria-hidden="true" />
+            </span>
+            <p className="mt-3 text-[15px] font-bold text-white">Camera Access Blocked</p>
+            <p className="mt-1.5 max-w-[320px] text-xs leading-relaxed text-[#94a3b8]">
+              Camera permission is required for automatic scanning. Please allow camera access
+              in your browser settings and try again.
+            </p>
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+              <Button variant="outline" size="sm" onClick={retryCamera}>
+                <Redo2 size={14} aria-hidden="true" />
+                Try Camera Again
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {phase === 'camera_error' && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-[#0a0d14] px-6 text-center">
+            <span className="flex size-12 items-center justify-center rounded-full border-2 border-amber-400 bg-amber-400/15 text-amber-400">
+              <CameraOff size={20} aria-hidden="true" />
+            </span>
+            <p className="mt-3 text-[15px] font-bold text-white">Unable to access camera</p>
+            <p className="mt-1.5 max-w-[320px] text-xs leading-relaxed text-[#94a3b8]">
+              {cameraError?.message}
+            </p>
+            <div className="mt-5">
+              <Button variant="outline" size="sm" onClick={retryCamera}>
+                <Redo2 size={14} aria-hidden="true" />
+                Try Again
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {phase === 'initializing' && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-[#0a0d14]">
+            <span className="size-8 animate-spin rounded-full border-2 border-white/15 border-t-[#00bfa5]" />
+            <p className="mt-4 text-sm font-semibold text-[#cbd5e1]">Initializing camera...</p>
+          </div>
+        )}
+
+        {isScanningOverlay(phase) && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/60 px-6 text-center backdrop-blur-sm">
+            <span className="size-9 animate-spin rounded-full border-2 border-white/20 border-t-[#00bfa5]" />
+            <p className="mt-4 text-sm font-semibold text-white">
+              {phase === 'processing' ? 'Processing package...' : 'Capturing...'}
+            </p>
+          </div>
+        )}
+
+        <div className="pointer-events-none absolute inset-x-4 bottom-3 z-[7] flex items-center justify-between">
+          <span
+            className={`flex items-center gap-1.5 rounded bg-black/55 px-2 py-1 text-[10px] font-semibold tracking-wide backdrop-blur-sm ${
+              phase === 'stabilizing'
+                ? 'text-[#00bfa5]'
+                : phase === 'permission_denied' || phase === 'camera_error'
+                  ? 'text-amber-400'
+                  : 'text-[#cbd5e1]'
+            }`}
+          >
+            <span
+              className={`size-1.5 rounded-full ${
+                phase === 'stabilizing'
+                  ? 'bg-[#00bfa5]'
+                  : phase === 'permission_denied' || phase === 'camera_error'
+                    ? 'bg-amber-400'
+                    : 'bg-[#00bfa5]'
+              }`}
+            />
+            {STATUS_LABELS[phase]}
+          </span>
+          {(phase === 'searching_for_package' || phase === 'searching_back') &&
+            (lastCategory === 'person' || lastCategory === 'non_food_object') && (
+              <span className="flex items-center gap-1 rounded bg-black/55 px-2 py-1 text-[10px] font-semibold text-[#cbd5e1] backdrop-blur-sm">
+                <VideoOff size={11} aria-hidden="true" />
+                Capture blocked — not a food package
+              </span>
+            )}
+        </div>
+
+        {cameraError && (phase === 'camera_error' || phase === 'permission_denied') && (
+          <div className="absolute inset-x-4 bottom-12 z-[8] flex items-center gap-2 rounded bg-red-950/90 px-3 py-2 text-[11px] text-red-100">
+            <CircleAlert size={12} className="shrink-0" aria-hidden="true" />
+            {cameraError.message}
+          </div>
+        )}
       </div>
-      <div className="mt-4 flex flex-wrap justify-between gap-3"><div className="flex flex-wrap gap-3"><Button variant="primary" onClick={captureImage} disabled={captureLockedRef.current || isProcessing}><Camera size={16} />{isReady ? 'Capture &amp; Analyze' : 'Enable Camera'}</Button><Button variant="outline" onClick={() => setAutoCapture((enabled) => !enabled)} disabled={!isReady || isProcessing}>{autoCapture ? 'Auto Capture: On' : 'Auto Capture: Off'}</Button><Button variant="outline" onClick={() => void requestCameraPermission()} disabled={isProcessing}><RotateCcw size={16} />Retry Camera</Button></div><div className="flex gap-2"><Button variant="ghost" onClick={startAnotherScan} disabled={!capturedImageUrl || isProcessing} aria-label="Start another scan"><RotateCcw size={16} />New Scan</Button><Button variant="ghost" onClick={() => { stopCamera(); onClose?.(); }} disabled={isProcessing} aria-label="Close camera"><X size={16} />Close</Button></div></div>
+
+      <div
+        className="sr-only"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {STATUS_LABELS[phase]}. {guidance.title} {guidance.subtitle}
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <SideCaptureSlot label="Front Side" capture={frontSide} />
+        <SideCaptureSlot label="Back Side" capture={backSide} />
+      </div>
+    </div>
+  );
+}
+
+function SideCaptureSlot({
+  label,
+  capture,
+}: {
+  label: string;
+  capture: CaptureSideResult | null;
+}) {
+  const qualityLabel = capture
+    ? capture.clientQuality.sharpness >= 60
+      ? 'Good'
+      : capture.clientQuality.sharpness >= 40
+        ? 'Fair'
+        : 'Poor'
+    : null;
+  return (
+    <div
+      className={`flex items-center gap-3 rounded-lg border p-2.5 transition-colors ${
+        capture
+          ? 'border-[#00bfa5]/50 bg-[#e0f7f4]/40'
+          : 'border-dashed border-[#cbd5e1] bg-[#f8fafc]'
+      }`}
+      aria-label={capture ? `${label} captured` : `${label} not captured yet`}
+    >
+      {capture ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={capture.objectUrl}
+          alt={`${label} captured image`}
+          className="size-12 shrink-0 rounded-md border border-[#e2e8f0] object-cover"
+        />
+      ) : (
+        <span className="flex size-12 shrink-0 items-center justify-center rounded-md bg-[#f1f5f9] text-[#94a3b8]">
+          <Camera size={18} aria-hidden="true" />
+        </span>
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="flex items-center gap-1 text-xs font-bold text-[#1e293b]">
+          {label}
+          {capture && <CheckCircle2 size={12} className="text-[#00bfa5]" aria-hidden="true" />}
+        </p>
+        {capture ? (
+          <p className={`mt-0.5 text-[10px] ${qualityLabel === 'Poor' ? 'font-semibold text-amber-500' : 'text-[#64748b]'}`}>
+            Image quality: {qualityLabel} ({capture.clientQuality.sharpness}/100)
+            {qualityLabel === 'Poor' && ' — continuing analysis'}
+          </p>
+        ) : (
+          <p className="mt-0.5 text-[10px] text-[#94a3b8]">Not captured yet</p>
+        )}
+      </div>
     </div>
   );
 }

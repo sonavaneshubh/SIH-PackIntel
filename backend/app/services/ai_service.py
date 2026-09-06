@@ -69,7 +69,8 @@ _MRP_LEAD = re.compile(
     re.IGNORECASE,
 )
 _DATE_LEAD = re.compile(
-    r"(?:mfg(?:\.|d)?\b\s*[:.]?|mfd\b\s*[:.]?|manufactur(?:e|ed|ing)?\s*(?:date)?\s*[:.]?"
+    r"(?:mfg(?:\.|d)?\b\s*[:.]?|mfd\b\s*[:.]?"
+    r"|manufactur(?:e|ed|ing)?\b(?:\s*(?:date|on)\b)?(?!\s*by\b)\s*[:.]?"
     r"|pack(?:ed|ing)?\b\s*(?:date)?\s*[:.]?|pkd\b\s*[:.]?"
     r"|date\s*of\s*(?:manufacture|pack(?:ing|ed)?)\s*[:.]?)",
     re.IGNORECASE,
@@ -80,7 +81,10 @@ _ORIGIN_LEAD = re.compile(
 
 # Line-start labels where the value follows a bare heading (e.g. "MANUFACTURER X").
 _MFG_LINE = re.compile(r"^\s*manufactur(?:er|ed)?(?:\s*by)?[ \t]*[:.]?[ \t]+", re.IGNORECASE | re.MULTILINE)
-_PACK_LINE = re.compile(r"^\s*pack(?:ed|er|ing)?(?:\s*by)?[ \t]*[:.]?[ \t]+", re.IGNORECASE | re.MULTILINE)
+_PACK_LINE = re.compile(
+    r"^\s*(?:pack(?:ed|ing)\s*(?:by|at)|packer(?:\s*by)?)\s*[:.]?[ \t]+",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 _QUANTITY_VALUE = re.compile(
     r"(?P<num>\d+(?:[.,]\d+)?)(?:\s*x\s*\d+)?\s*"
@@ -99,7 +103,10 @@ _UNIT_NORM = {
 
 _PRICE_VALUE = re.compile(r"(?P<price>\d+(?:[.,]\d{1,2})?)")
 _DATE_VALUE = re.compile(
-    r"(?P<date>\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2}[/-]\d{4}|[A-Za-z]{3,9}\s*\d{2,4})"
+    r"(?P<date>\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2}[/-]\d{4}|"
+    r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|"
+    r"aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s*(?:19|20)\d{2})",
+    re.IGNORECASE,
 )
 _TAX_NOTE = re.compile(r"\b(?:incl(?:usive)?\.?\s*of\s*all\s*taxes?|incl\.?)\b", re.IGNORECASE)
 

@@ -6,10 +6,10 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.services import ocr_service
 from app.api.routes import scan as scan_route
-from app.schemas.product import field as make_field
 from app.services.ai_service import AIService
 from app.services.compliance_service import ComplianceService
 from app.services.ocr_service import OCRService
+from tests.conftest import stub_ocr_space
 
 client = TestClient(app)
 
@@ -48,46 +48,35 @@ def test_cors_preflight_allows_local_frontend():
     assert "content-type" in response.headers["access-control-allow-headers"].lower()
 
 
-def test_low_confidence_scan_uses_structured_vision_fallback(monkeypatch):
+def test_low_confidence_scan_does_not_invoke_gemini(monkeypatch):
     image = Image.new("RGB", (600, 600), "white")
 
-    class FakeOCR:
+    class FakeOCRSpace:
         def process_image(self, image_url):
             return {
                 "raw_text": "Rice",
                 "confidence": 25.0,
-                "engine": "tesseract",
+                "engine": "ocr_space",
                 "regions": [],
                 "image_quality": "usable",
                 "quality_reason": None,
             }
 
-    vision_values = {
-        field_key: make_field(value=value, status="detected", confidence=95.0, source="vision")
-        for field_key, value in {
-            "brand_or_commodity_name": "PackIntel Foods",
-            "generic_name": "Rice",
-            "net_quantity": "5 kg",
-            "manufacturer_name": "Acme Foods",
-            "mrp": "Rs. 499",
-        }.items()
-    }
+    # Gemini must never execute, even for low-confidence OCR text.
+    def _forbidden_vision_call(_):
+        raise AssertionError("Gemini vision was called during the OCR.Space-only scan")
 
-    monkeypatch.setattr(scan_route, "get_ocr_service", lambda: FakeOCR())
-    monkeypatch.setattr(scan_route.VisionService, "extract", lambda _: vision_values)
+    monkeypatch.setattr(scan_route, "get_ocr_service", lambda: FakeOCRSpace())
+    monkeypatch.setattr(scan_route.VisionService, "extract", _forbidden_vision_call)
     monkeypatch.setattr(scan_route, "get_current_user", lambda: {"sub": "test-user"})
 
     response = client.post("/api/scan", json={"image_url": image_data_uri(image)})
 
     assert response.status_code == 200
     data = response.json()
-    assert data["vision_used"] is True
-    assert data["extraction_source"] == "ocr+vision"
-    # OCR (title-guess "Rice", conf 55) vs vision ("PackIntel Foods") disagree,
-    # so the merged field is flagged uncertain for review, not silently chosen.
-    assert data["product_information"]["brand_or_commodity_name"]["value"] == "PackIntel Foods"
-    assert data["product_information"]["brand_or_commodity_name"]["status"] == "uncertain"
-    assert data["product_information"]["expiry_date"]["status"] == "not_visible"
+    assert data["vision_used"] is False
+    assert data["vision_error"] is None
+    assert data["extraction_source"] == "ocr"
 
 
 def test_scan_endpoint():
@@ -133,7 +122,8 @@ def test_ocr_diagnostics_distinguish_invalid_configured_binary(monkeypatch):
     }
 
 
-def test_clear_text_image_completes_with_extracted_information():
+def test_clear_text_image_completes_with_extracted_information(monkeypatch):
+    stub_ocr_space(monkeypatch, "PRODUCT Rice MRP Rs. 149 Net Quantity 500 g")
     image = Image.new("RGB", (1000, 500), (220, 220, 220))
     draw = ImageDraw.Draw(image)
     draw.rectangle((20, 20, 980, 480), outline="black", width=5)
@@ -145,23 +135,21 @@ def test_clear_text_image_completes_with_extracted_information():
     data = response.json()
     assert data["scan_completed"] is True
     assert data["success"] is True
+    assert data["ocr_engine"] == "ocr_space"
     assert data["ocr_raw_text"]
     assert data["score"] > 0
 
 
 def test_partial_text_completes_with_partial_status(monkeypatch):
-    image = Image.new("RGB", (1000, 500), (220, 220, 220))
-    draw = ImageDraw.Draw(image)
-    draw.rectangle((20, 20, 980, 480), outline="black", width=5)
-    draw.text((50, 180), "MRP Rs. 149", fill="black", stroke_width=1)
-    monkeypatch.setattr(ocr_service.pytesseract, "image_to_string", lambda *args, **kwargs: "MRP Rs. 149")
+    stub_ocr_space(monkeypatch, "MRP Rs. 149")
 
-    response = scan(image)
+    response = scan(Image.new("RGB", (1000, 500), (220, 220, 220)))
 
     assert response.status_code == 200
     data = response.json()
     assert data["scan_completed"] is True
     assert data["status"] == "partial_information"
+    assert data["ocr_engine"] == "ocr_space"
     assert data["score"] > 0
     assert data["report"]
 
@@ -174,6 +162,7 @@ def test_blank_image_completes_with_zero_score():
     assert data["scan_completed"] is True
     assert data["score"] == 0
     assert data["status"] == "insufficient_information"
+    assert data["ocr_engine"] == "ocr_space"
     assert "readable" in data["report"].lower()
 
 
@@ -184,7 +173,7 @@ def test_blurry_image_completes_as_unusable():
     data = response.json()
     assert data["scan_completed"] is True
     assert data["score"] == 0
-    assert data["image_quality"] == "poor"
+    assert data["image_quality"] == "unusable"
     assert data["report"]
 
 
@@ -199,9 +188,7 @@ def test_random_object_image_completes_without_scan_error():
     assert data["status"] == "insufficient_information"
 
 
-def test_empty_ocr_completes_without_ocr_failure(monkeypatch):
-    monkeypatch.setattr(ocr_service.pytesseract, "image_to_string", lambda *args, **kwargs: "")
-
+def test_empty_ocr_completes_without_ocr_failure():
     response = scan(Image.new("RGB", (600, 600), "white"))
 
     assert response.status_code == 200
@@ -211,11 +198,13 @@ def test_empty_ocr_completes_without_ocr_failure(monkeypatch):
     assert "OCR returned no text" not in response.text
 
 
-def test_expected_ocr_exception_completes_with_warning(monkeypatch):
-    def raise_ocr_error(*args, **kwargs):
-        raise ocr_service.pytesseract.TesseractError("test OCR failure", 1)
+def test_expected_ocr_space_exception_completes_without_crash(monkeypatch):
+    from app.services.ocr_space_service import OCRSpaceError
 
-    monkeypatch.setattr(ocr_service.pytesseract, "image_to_string", raise_ocr_error)
+    stub_ocr_space(
+        monkeypatch,
+        exc=OCRSpaceError("OCR.Space HTTP 500: service unavailable"),
+    )
 
     response = scan(Image.new("RGB", (600, 600), "white"))
 
@@ -223,10 +212,16 @@ def test_expected_ocr_exception_completes_with_warning(monkeypatch):
     data = response.json()
     assert data["scan_completed"] is True
     assert data["score"] == 0
-    assert "OCR warning" in data["report"]
+    assert data["ocr_engine"] == "ocr_space"
+    assert "HTTP 500" in (data["quality_reason"] or "")
+    assert "unable to verify" in data["report"]
 
 
-def test_normal_compliance_scan_keeps_success_response():
+def test_normal_compliance_scan_keeps_success_response(monkeypatch):
+    stub_ocr_space(
+        monkeypatch,
+        "MANUFACTURER Acme Foods, Delhi\nPRODUCT Rice\nNet Quantity 5 kg\nMRP Rs. 499\nMFD 01/2026",
+    )
     image = Image.new("RGB", (1000, 500), (220, 220, 220))
     draw = ImageDraw.Draw(image)
     draw.rectangle((20, 20, 980, 480), outline="black", width=5)
@@ -245,6 +240,86 @@ def test_normal_compliance_scan_keeps_success_response():
     assert response.status_code == 200
     assert response.json()["scan_completed"] is True
     assert response.json()["success"] is True
+    assert response.json()["ocr_engine"] == "ocr_space"
+
+
+# ---------------------------------------------------------------------------
+# OCR.Space-only pipeline guarantees
+# ---------------------------------------------------------------------------
+
+def test_ocr_space_successful_scan(monkeypatch):
+    stub_ocr_space(
+        monkeypatch,
+        "PREMIUM RICE\nNet Quantity 5 kg\nMRP Rs. 499\nMFD 01/2026\n"
+        "Manufacturer: Acme Foods Pvt Ltd\nCustomer Care: 1800-123-456",
+    )
+
+    response = scan(Image.new("RGB", (600, 600), "white"))
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["scan_completed"] is True
+    assert data["ocr_engine"] == "ocr_space"
+    assert data["vision_used"] is False
+    assert data["extraction_source"] == "ocr"
+    assert data["score"] > 0
+    assert "MRP Rs. 499" in data["ocr_raw_text"]
+    assert data["product_information"]["net_quantity"]["value"] == "5 kg"
+
+
+def test_ocr_space_empty_response_is_structured_insufficient(monkeypatch):
+    stub_ocr_space(monkeypatch, "")
+
+    response = scan(Image.new("RGB", (600, 600), "white"))
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "insufficient_information"
+    assert data["scan_completed"] is True
+    assert data["score"] == 0
+    assert data["compliance_score"] == 0
+    assert data["ocr_engine"] == "ocr_space"
+    assert data["vision_used"] is False
+    assert "clearer image" in data["report"].lower()
+
+
+def test_ocr_space_api_failure_is_structured_ocr_failed(monkeypatch):
+    from app.services.ocr_space_service import OCRSpaceError
+
+    stub_ocr_space(monkeypatch, exc=OCRSpaceError("OCR.Space services are down (500)"))
+
+    response = scan(Image.new("RGB", (600, 600), "white"))
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["scan_completed"] is True
+    assert data["status"] == "insufficient_information"
+    assert data["score"] == 0
+    assert data["ocr_engine"] == "ocr_space"
+    assert data["image_quality"] == "unusable"
+    assert "500" in (data["quality_reason"] or "")
+    assert "OCR status: failed" in data["report"]
+
+
+def test_gemini_is_never_called_during_scan(monkeypatch):
+    stub_ocr_space(
+        monkeypatch,
+        "PRODUCT Rice\nNet Quantity 5 kg\nMRP Rs. 499\nMFD 01/2026\nManufacturer: Acme Foods",
+    )
+
+    def _forbidden_vision_call(_):
+        raise AssertionError("Gemini vision executed during the scan pipeline")
+
+    monkeypatch.setattr(scan_route.VisionService, "extract", _forbidden_vision_call)
+    monkeypatch.setattr(scan_route, "get_current_user", lambda: {"sub": "test-user"})
+
+    response = scan(Image.new("RGB", (600, 600), "white"))
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["vision_used"] is False
+    assert data["vision_error"] is None
+    assert data["extraction_source"] == "ocr"
 
 
 def test_ai_extraction_sample_label():

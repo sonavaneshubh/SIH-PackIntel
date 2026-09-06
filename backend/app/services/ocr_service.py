@@ -8,7 +8,7 @@ import urllib.request
 from PIL import Image, ImageEnhance, ImageFilter, ImageStat
 from app.core.config import settings
 from app.services.layout_ocr import extract_layout_ocr
-from app.services.ocr_space_service import OCRSpaceService, ocr_space_enabled
+from app.services.ocr_space_service import OCRSpaceService
 
 logger = logging.getLogger(__name__)
 
@@ -384,28 +384,13 @@ class OCRService:
 
 
 def get_ocr_service():
-    """Factory function to get the configured OCR service.
+    """Create the OCR engine used by the production scan pipeline.
 
-    OCR engine selection:
-    - ``OCR_ENGINE=tesseract`` -> local Tesseract (hermetic tests / no key).
-    - ``OCR_ENGINE=ocr_space`` -> OCR.Space (fails gracefully if unconfigured).
-    - Unset (default) -> OCR.Space when ``OCR_SPACE_API_KEY`` is configured,
-      otherwise local Tesseract.
+    OCR.Space is the ONLY OCR engine: every image submitted to /api/scan goes
+    through :class:`OCRSpaceService`. A missing/invalid ``OCR_SPACE_API_KEY``
+    is surfaced by ``process_image`` as a structured OCR failure (never a
+    silent Tesseract fallback). The local :class:`OCRService` (Tesseract)
+    remains in the codebase for diagnostics and offline unit testing only.
     """
-    engine = os.getenv("OCR_ENGINE", "").strip().lower()
-
-    if engine == "tesseract":
-        return OCRService()
-
-    if engine == "ocr_space":
-        if not ocr_space_enabled():
-            logger.error("OCR_ENGINE=ocr_space but OCR_SPACE_API_KEY is not configured.")
-        logger.info("OCR engine selected: OCR.Space")
-        return OCRSpaceService()
-
-    if ocr_space_enabled():
-        logger.info("OCR engine selected: OCR.Space (OCR_SPACE_API_KEY configured)")
-        return OCRSpaceService()
-
-    logger.info("OCR engine selected: Tesseract (OCR_SPACE_API_KEY not configured)")
-    return OCRService()
+    logger.info("OCR engine selected: OCR.Space (only engine)")
+    return OCRSpaceService()

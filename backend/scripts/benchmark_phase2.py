@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import base64
 import io
-import json
 import os
 import sys
 from pathlib import Path
@@ -469,7 +468,6 @@ def render_label(case_id: str, brand: str, lines: List[str], low_contrast: bool 
     draw.line([(60, y), (width - 60, y)], fill=muted, width=3)
     y += 30
 
-    label_font = _font(True, 22)
     for text in lines[1:]:
         draw.text((70, y), text, font=text_font, fill=ink)
         bb = draw.textbbox((0, 0), text, font=text_font)

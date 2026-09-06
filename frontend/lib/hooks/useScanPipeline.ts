@@ -10,15 +10,16 @@ import {
   saveComplianceResults,
   updateInspection,
   getInspectionById,
+  logSupabaseError,
 } from '@/lib/supabase/inspectionService';
 import { Inspection, ExtractedLabelInsert, ComplianceResultInsert, InspectionImage } from '@/types/database';
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+import { API_BASE_URL } from '@/lib/api';
 
 export interface ScanPipelineState {
   step: 'idle' | 'creating' | 'uploading' | 'ocr' | 'extracting' | 'compliance' | 'completed' | 'error';
   inspection: Inspection | null;
   image: InspectionImage | null;
+  backImage: InspectionImage | null;
   ocrText: string | null;
   extractedLabels: ExtractedLabelInsert | null;
   complianceResults: ComplianceResultInsert[] | null;
@@ -28,6 +29,8 @@ export interface ScanPipelineState {
   visionError: string | null;
   error: string | null;
   progress: number;
+  detection: { is_food_package: boolean; confidence: number; reason: string } | null;
+  warnings: string[];
 }
 
 export function useScanPipeline() {
@@ -36,6 +39,7 @@ export function useScanPipeline() {
     step: 'idle',
     inspection: null,
     image: null,
+    backImage: null,
     ocrText: null,
     extractedLabels: null,
     complianceResults: null,
@@ -45,6 +49,8 @@ export function useScanPipeline() {
     visionError: null,
     error: null,
     progress: 0,
+    detection: null,
+    warnings: [],
   });
 
   // Use a ref to track the current inspection for error handling
@@ -68,7 +74,8 @@ export function useScanPipeline() {
       manufacturer_name: string;
       product_category: string;
       is_imported: boolean;
-    }
+    },
+    backFile?: File
   ) => {
     updateState({ step: 'creating', error: null, progress: 5 });
 
@@ -105,14 +112,45 @@ export function useScanPipeline() {
 
       updateState({ image, step: 'ocr', progress: 30 });
 
-      // Step 3: Call backend for OCR processing
+      // Step 2b: Optionally store the back-side image separately for future
+      // two-sided analysis. The backend OCR call below keeps using the front
+      // image for current API compatibility.
+      let uploadedBackImage: InspectionImage | null = null;
+      if (backFile) {
+        const { data: backImage, error: backUploadError } = await uploadInspectionImage(
+          inspection.id,
+          backFile,
+          'label_back'
+        );
+        if (backUploadError) {
+          // Back-side persistence is optional enrichment. A failure here must
+          // not abort the scan: the raw file is still sent to the pipeline.
+          console.warn('[useScanPipeline] back image not persisted (continuing):', backUploadError);
+          uploadedBackImage = null;
+        } else {
+          uploadedBackImage = backImage ? { ...backImage, public_url: backImage.public_url } : null;
+        }
+        updateState({
+          backImage: uploadedBackImage,
+        });
+      }
+
+      // Step 3: Call backend for analysis. We send both images (front + back)
+      // as a single multipart request so the two-side pipeline runs in one pass.
+      const multipartForm = new FormData();
+      multipartForm.append('front_image', file, file.name || 'front.png');
+      if (backFile) {
+        multipartForm.append('back_image', backFile, backFile.name || 'back.png');
+      }
+      multipartForm.append('product_name', productData.product_name);
+      multipartForm.append('brand_name', productData.brand_name);
+      multipartForm.append('manufacturer_name', productData.manufacturer_name);
+      multipartForm.append('product_category', productData.product_category);
+      multipartForm.append('is_imported', String(productData.is_imported));
+
       const ocrResponse = await fetch(`${API_BASE_URL}/api/scan`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          image_url: image.public_url,
-          ...productData,
-        }),
+        body: multipartForm,
       });
 
       if (!ocrResponse.ok) {
@@ -141,11 +179,19 @@ export function useScanPipeline() {
         extractionSource: ocrData.extraction_source || 'ocr',
         visionUsed: Boolean(ocrData.vision_used),
         visionError: ocrData.vision_error || null,
+        detection: ocrData.detection
+          ? {
+              is_food_package: Boolean(ocrData.detection.is_food_package),
+              confidence: Number(ocrData.detection.confidence) || 0,
+              reason: ocrData.detection.reason || '',
+            }
+          : null,
+        warnings: Array.isArray(ocrData.warnings) ? ocrData.warnings : [],
       });
 
       // Step 4: Save OCR text, real confidence and word regions to inspection_images
       if (image.id) {
-        await supabase
+        const { error: updateErr } = await supabase
           .from('inspection_images')
           .update({
             ocr_text: ocrText,
@@ -154,6 +200,40 @@ export function useScanPipeline() {
             ocr_regions: ocrRegions,
           })
           .eq('id', image.id);
+
+        if (updateErr) {
+          logSupabaseError('useScanPipeline:updateFrontImage', updateErr);
+          const retry = await supabase
+            .from('inspection_images')
+            .update({ ocr_text: ocrText })
+            .eq('id', image.id);
+          if (retry.error) {
+            logSupabaseError('useScanPipeline:updateFrontImageFallback', retry.error);
+          }
+        }
+      }
+
+      // Persist the back-side OCR result when a back image was analysed.
+      if (uploadedBackImage?.id && ocrData.back_side?.ocr_raw_text) {
+        const { error: backUpdateErr } = await supabase
+          .from('inspection_images')
+          .update({
+            ocr_text: ocrData.back_side.ocr_raw_text,
+            ocr_confidence: Number(ocrData.back_side.ocr_confidence) || 0,
+            ocr_engine: ocrData.back_side.ocr_engine || 'ocr_space',
+          })
+          .eq('id', uploadedBackImage.id);
+
+        if (backUpdateErr) {
+          logSupabaseError('useScanPipeline:updateBackImage', backUpdateErr);
+          const retry = await supabase
+            .from('inspection_images')
+            .update({ ocr_text: ocrData.back_side.ocr_raw_text })
+            .eq('id', uploadedBackImage.id);
+          if (retry.error) {
+            logSupabaseError('useScanPipeline:updateBackImageFallback', retry.error);
+          }
+        }
       }
 
       // Step 5: Save extracted labels (from OCR text only, never request metadata)
@@ -262,6 +342,7 @@ export function useScanPipeline() {
       step: 'idle',
       inspection: null,
       image: null,
+      backImage: null,
       ocrText: null,
       extractedLabels: null,
       complianceResults: null,
@@ -271,6 +352,8 @@ export function useScanPipeline() {
       visionError: null,
       error: null,
       progress: 0,
+      detection: null,
+      warnings: [],
     });
   }, []);
 

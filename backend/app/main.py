@@ -2,8 +2,10 @@ import logging
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.api.routes import scan, inspection, compliance, reports
@@ -39,6 +41,7 @@ app = FastAPI(
 
 origins = [
     "http://localhost:3000",
+    "http://127.0.0.1:3000",
     "http://localhost:3001",
     "http://127.0.0.1:3001",
     "http://localhost:5173",
@@ -51,9 +54,55 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
+
+
+# ============================================================
+# EXCEPTION HANDLERS
+# ============================================================
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """
+    Custom handler for validation errors.
+    Sanitizes binary `bytes` in input values so `jsonable_encoder` never throws
+    UnicodeDecodeError when binary image data is present in form fields.
+    """
+    logger.warning("Request validation error on %s %s", request.method, request.url.path)
+    clean_errors = []
+    for err in exc.errors():
+        error_dict = dict(err)
+        if "input" in error_dict:
+            raw_input = error_dict["input"]
+            if isinstance(raw_input, bytes):
+                try:
+                    error_dict["input"] = raw_input.decode("utf-8")
+                except UnicodeDecodeError:
+                    error_dict["input"] = f"<binary data ({len(raw_input)} bytes)>"
+            elif not isinstance(raw_input, (str, int, float, bool, type(None), list, dict)):
+                error_dict["input"] = str(raw_input)
+        clean_errors.append(error_dict)
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={"detail": clean_errors},
+    )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Global exception handler to log unhandled errors and return structured 500
+    responses with proper CORS headers.
+    """
+    logger.error("Unhandled error on %s %s: %s", request.method, request.url.path, exc, exc_info=True)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": f"Internal server error: {str(exc)}"},
+    )
+
 
 
 # ============================================================

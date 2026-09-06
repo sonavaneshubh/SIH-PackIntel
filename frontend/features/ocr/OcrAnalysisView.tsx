@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { ConfidenceBadge } from '@/components/ui/Badge';
 import { supabase } from '@/lib/supabase/client';
 import { InspectionImage, ExtractedLabel } from '@/types/database';
-import { getSignedImageUrl } from '@/lib/supabase/inspectionService';
+import { getSignedImageUrl, logSupabaseError } from '@/lib/supabase/inspectionService';
 
 interface ExtractedEntity {
   id: string;
@@ -40,13 +40,32 @@ export function OcrAnalysisView() {
 
     const fetchData = async () => {
       try {
-        // Fetch inspection image
-        const { data: images, error: imgError } = await supabase
+        // Fetch inspection image safely with fallback for column names
+        let images: InspectionImage[] | null = null;
+        let imgError: any = null;
+
+        const res1 = await supabase
           .from('inspection_images')
           .select('*')
           .eq('inspection_id', inspectionId)
-          .order('uploaded_at', { ascending: false })
+          .order('created_at', { ascending: false })
           .limit(1);
+
+        if (res1.error) {
+          logSupabaseError('OcrAnalysisView:fetchImageCreated', res1.error);
+          const res2 = await supabase
+            .from('inspection_images')
+            .select('*')
+            .eq('inspection_id', inspectionId)
+            .limit(1);
+          if (res2.error) {
+            logSupabaseError('OcrAnalysisView:fetchImageFallback', res2.error);
+          }
+          images = res2.data;
+          imgError = res2.error;
+        } else {
+          images = res1.data;
+        }
 
         if (imgError) throw imgError;
 

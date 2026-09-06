@@ -19,11 +19,13 @@ import logging
 import os
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import requests
 from dotenv import load_dotenv
 from PIL import Image
+
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +34,9 @@ load_dotenv(_BACKEND_DIR / ".env")
 
 OCR_SPACE_API_KEY = os.getenv("OCR_SPACE_API_KEY")
 OCR_SPACE_URL = "https://api.ocr.space/parse/image"
-OCR_SPACE_TIMEOUT_SECONDS = 60
+# Timeout is configurable via OCR_TIMEOUT_SECONDS; imported from settings so a
+# single config source drives the whole pipeline.
+OCR_SPACE_TIMEOUT_SECONDS = max(1, int(getattr(settings, "OCR_TIMEOUT_SECONDS", 60)))
 
 MAX_DIMENSION_PX = 2000
 JPEG_QUALITY = 80
@@ -262,6 +266,15 @@ class OCRSpaceService:
             "quality_reason": None,
             "quality": {},
         }
+
+    @classmethod
+    def process_images(cls, image_inputs: List[str]) -> List[Dict[str, Any]]:
+        """OCR each input independently and return one structured dict per input.
+
+        A failure for one image never aborts the others or the caller: each
+        entry carries its own failure template. Callers combine the results.
+        """
+        return [cls.process_image(image_input) for image_input in image_inputs]
 
     @staticmethod
     def _extract_confidence(raw_response: Dict[str, Any]) -> float:

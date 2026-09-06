@@ -256,6 +256,22 @@ class ComplianceService:
         )
 
     @staticmethod
+    def review_status(overall_result: str) -> str:
+        """Map the legacy overall result to the scan status vocabulary.
+
+        ``REVIEW_REQUIRED`` is returned whenever evidence is missing or
+        ambiguous (the legal-metrology rules must never auto-fail a package
+        merely because OCR could not see a declaration). ``PASS`` and ``FAIL``
+        map directly; ``NOT_DETERMINED`` is reserved for scans that produced
+        no usable information at all.
+        """
+        if overall_result == "pass":
+            return "PASS"
+        if overall_result == "fail":
+            return "FAIL"
+        return "REVIEW_REQUIRED"
+
+    @staticmethod
     def _promote_declarations(declarations: Dict[str, Any]) -> Dict[str, Any]:
         """Map the flat Phase 1 declaration keys onto the canonical schema."""
         pi: Dict[str, Any] = {}

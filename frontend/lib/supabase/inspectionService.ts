@@ -29,6 +29,33 @@ export function generateInspectionNumber(): string {
   return `INS-${date}-${random}`;
 }
 
+// Renders a Supabase/PostgREST error object (status, code, message, details,
+// hint) into a single string so the real database error is never lost behind
+// a generic fallback message.
+export function supabaseErrorDetail(error: any): string {
+  if (!error) return 'Unknown Supabase error';
+  const parts = [
+    error.status ? `status=${error.status}` : null,
+    error.code ? `code=${error.code}` : null,
+    error.message || null,
+    error.details || null,
+    error.hint || null,
+  ].filter(Boolean);
+  return parts.join(' | ');
+}
+
+// Logs the full Supabase error object (never just message) so failures are
+// diagnosable from the browser console.
+export function logSupabaseError(context: string, error: any): void {
+  console.error(`[${context}:SupabaseError]`, {
+    status: error?.status,
+    code: error?.code,
+    message: error?.message,
+    details: error?.details,
+    hint: error?.hint,
+  });
+}
+
 // ─── Inspections ──────────────────────────────────────────────────────────────
 
 export async function createInspection(
@@ -57,8 +84,8 @@ export async function createInspection(
     .single();
 
   if (error) {
-    console.error('[createInspection]', error.message);
-    return { data: null, error: 'Failed to create inspection record.' };
+    logSupabaseError('createInspection', error);
+    return { data: null, error: `Failed to create inspection record: ${supabaseErrorDetail(error)}` };
   }
   return { data, error: null };
 }
@@ -75,8 +102,8 @@ export async function updateInspection(
     .single();
 
   if (error) {
-    console.error('[updateInspection]', error.message);
-    return { data: null, error: 'Failed to update inspection.' };
+    logSupabaseError('updateInspection', error);
+    return { data: null, error: `Failed to update inspection: ${supabaseErrorDetail(error)}` };
   }
   return { data, error: null };
 }
@@ -455,8 +482,11 @@ export async function uploadInspectionImage(
     });
 
   if (uploadError) {
-    console.error('[uploadInspectionImage]', uploadError.message);
-    return { data: null, error: 'Image upload failed. Please try again.' };
+    logSupabaseError('uploadInspectionImage:storage', uploadError);
+    return {
+      data: null,
+      error: `Image upload failed: ${supabaseErrorDetail(uploadError)}`,
+    };
   }
 
   const uploadedPath = uploadData?.path || storagePath;
@@ -482,18 +512,36 @@ export async function uploadInspectionImage(
     console.error('[uploadInspectionImage:signedUrl]', {
       bucket: IMAGE_BUCKET,
       path: uploadedPath,
-      message: signedUrlError?.message,
+      ...(signedUrlError ? {
+        status: (signedUrlError as any)?.status,
+        code: (signedUrlError as any)?.code,
+        message: signedUrlError?.message,
+        details: (signedUrlError as any)?.details,
+        hint: (signedUrlError as any)?.hint,
+      } : { message: 'no signed URL returned by storage' }),
     });
-    return { data: null, error: 'Image uploaded but could not create a secure OCR URL.' };
+    return {
+      data: null,
+      error: `Image uploaded but could not create a secure OCR URL: ${supabaseErrorDetail(signedUrlError || new Error('signedUrl was empty'))}`,
+    };
   }
 
   const ocrUrl = signedUrlData.signedUrl;
+
+  const ACCEPTED_IMAGE_TYPES: InspectionImage['image_type'][] = [
+    'label_front',
+    'label_back',
+    'label_side',
+    'product_full',
+    'evidence_crop',
+  ];
+  const safeImageType = ACCEPTED_IMAGE_TYPES.includes(imageType) ? imageType : 'label_front';
 
   const imageRecord: Record<string, any> = {
     inspection_id: inspectionId,
     storage_path: uploadedPath,
     public_url: ocrUrl,
-    image_type: imageType,
+    image_type: safeImageType,
     file_name: file.name,
     file_size_bytes: file.size,
     mime_type: file.type,
@@ -505,20 +553,34 @@ export async function uploadInspectionImage(
     .select()
     .single();
 
-  if (dbError && dbError.message?.includes('public_url')) {
-    delete imageRecord.public_url;
+  if (dbError) {
+    logSupabaseError('uploadInspectionImage:db', dbError);
+    // Retry with minimal schema fields if optional columns cause insertion failure
+    const fallbackRecord: Record<string, any> = {
+      inspection_id: inspectionId,
+      storage_path: uploadedPath,
+      image_type: safeImageType,
+      file_name: file.name,
+    };
     const retry = await supabase
       .from('inspection_images')
-      .insert(imageRecord)
+      .insert(fallbackRecord)
       .select()
       .single();
-    data = retry.data;
-    dbError = retry.error;
+
+    if (retry.error) {
+      logSupabaseError('uploadInspectionImage:db:retry', retry.error);
+    } else {
+      data = retry.data;
+      dbError = null;
+    }
   }
 
   if (dbError) {
-    console.error('[uploadInspectionImage:db]', dbError.message);
-    return { data: null, error: 'Image saved to storage but failed to record in database.' };
+    return {
+      data: null,
+      error: `Image saved to storage but failed to record in database: ${supabaseErrorDetail(dbError)}`,
+    };
   }
 
   const resultData = data

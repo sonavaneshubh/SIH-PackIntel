@@ -415,7 +415,7 @@ class StubOCR:
         return {
             "raw_text": self.text,
             "confidence": self.confidence,
-            "engine": "tesseract",
+            "engine": "ocr_space",
             "regions": [],
             "image_quality": self.quality,
             "quality_reason": None,
@@ -449,7 +449,90 @@ def test_ocr_good_image_no_fallback(monkeypatch):
     assert data["product_information"]["net_quantity"]["status"] == "detected"
 
 
-def test_ocr_low_confidence_triggers_vision(monkeypatch):
+def test_ocr_low_confidence_does_not_invoke_vision(monkeypatch):
+    monkeypatch.setattr(
+        scan_route,
+        "get_ocr_service",
+        lambda: StubOCR("Rice\nMRP Rs. 149", 20.0),
+    )
+
+    def _forbidden_vision_call(_):
+        raise AssertionError("Gemini vision executed despite ENABLE_VISION_FALLBACK=false")
+
+    monkeypatch.setattr(scan_route.VisionService, "extract", _forbidden_vision_call)
+    monkeypatch.setattr(scan_route, "get_current_user", lambda: {"sub": "test-user"})
+
+    response = scan(Image.new("RGB", (600, 600), "white"))
+    assert response.status_code == 200
+    data = response.json()
+    assert data["vision_used"] is False
+    assert data["vision_error"] is None
+    assert data["extraction_source"] == "ocr"
+
+
+def test_vision_failure_is_never_attempted_without_fallback(monkeypatch):
+    monkeypatch.setattr(scan_route, "get_ocr_service", lambda: StubOCR("Rice\nNet Quantity 5 kg\nMRP Rs. 499", 30.0))
+
+    def _forbidden_vision_call(_):
+        raise AssertionError("Gemini vision executed despite ENABLE_VISION_FALLBACK=false")
+
+    monkeypatch.setattr(scan_route.VisionService, "extract", _forbidden_vision_call)
+    monkeypatch.setattr(scan_route, "get_current_user", lambda: {"sub": "test-user"})
+
+    response = scan(Image.new("RGB", (600, 600), "white"))
+    assert response.status_code == 200
+    data = response.json()
+    assert data["vision_used"] is False
+    assert data["vision_error"] is None
+    assert data["product_information"]["net_quantity"]["value"] == "5 kg"
+    assert data["compliance_results"]  # OCR results were retained
+
+
+def test_missing_critical_field_does_not_invoke_vision(monkeypatch):
+    monkeypatch.setattr(
+        scan_route,
+        "get_ocr_service",
+        lambda: StubOCR("Rice\nNet Quantity 5 kg\nMRP Rs. 499\nManufacturer: Acme Foods", 90.0),
+    )
+
+    def _forbidden_vision_call(_):
+        raise AssertionError("Gemini vision executed despite ENABLE_VISION_FALLBACK=false")
+
+    monkeypatch.setattr(scan_route.VisionService, "extract", _forbidden_vision_call)
+    monkeypatch.setattr(scan_route, "get_current_user", lambda: {"sub": "test-user"})
+
+    response = scan(Image.new("RGB", (600, 600), "white"))
+    assert response.status_code == 200
+    data = response.json()
+    assert data["vision_used"] is False
+    assert data["product_information"]["packing_date"]["status"] == "not_visible"
+
+
+def test_ocr_conflict_does_not_surface_vision_value(monkeypatch):
+    monkeypatch.setattr(
+        scan_route,
+        "get_ocr_service",
+        lambda: StubOCR("Rice\nNet Quantity 5 kg\nMRP Rs. 499\nManufacturer: Acme Foods", 45.0),
+    )
+
+    def _forbidden_vision_call(_):
+        raise AssertionError("Gemini vision executed despite ENABLE_VISION_FALLBACK=false")
+
+    monkeypatch.setattr(scan_route.VisionService, "extract", _forbidden_vision_call)
+    monkeypatch.setattr(scan_route, "get_current_user", lambda: {"sub": "test-user"})
+
+    response = scan(Image.new("RGB", (600, 600), "white"))
+    assert response.status_code == 200
+    data = response.json()
+    assert data["vision_used"] is False
+    mrp = data["product_information"]["mrp"]
+    assert mrp["status"] == "detected"
+    assert not mrp.get("conflicts")
+
+
+def test_vision_fallback_can_be_reenabled_by_config(monkeypatch):
+    # The settings object is cached at import; re-arm the flag directly.
+    monkeypatch.setattr(scan_route.settings, "ENABLE_VISION_FALLBACK", True)
     monkeypatch.setattr(
         scan_route,
         "get_ocr_service",
@@ -461,57 +544,6 @@ def test_ocr_low_confidence_triggers_vision(monkeypatch):
     response = scan(Image.new("RGB", (600, 600), "white"))
     assert response.status_code == 200
     data = response.json()
+    # Gemini code path is retained and fully honouring the master switch.
     assert data["vision_used"] is True
     assert data["product_information"]["brand_or_commodity_name"]["value"] == "Golden Rice"
-
-
-def test_vision_failure_keeps_ocr_results(monkeypatch):
-    monkeypatch.setattr(scan_route, "get_ocr_service", lambda: StubOCR("Rice\nNet Quantity 5 kg\nMRP Rs. 499", 30.0))
-    monkeypatch.setattr(
-        scan_route.VisionService,
-        "extract",
-        lambda _: (_ for _ in ()).throw(VisionExtractionError("no API key")),
-    )
-    monkeypatch.setattr(scan_route, "get_current_user", lambda: {"sub": "test-user"})
-
-    response = scan(Image.new("RGB", (600, 600), "white"))
-    assert response.status_code == 200
-    data = response.json()
-    assert data["vision_used"] is False
-    assert "no API key" in (data["vision_error"] or "")
-    assert data["product_information"]["net_quantity"]["value"] == "5 kg"
-    assert data["compliance_results"]  # OCR results were retained
-
-
-def test_missing_critical_field_triggers_vision(monkeypatch):
-    monkeypatch.setattr(
-        scan_route,
-        "get_ocr_service",
-        lambda: StubOCR("Rice\nNet Quantity 5 kg\nMRP Rs. 499\nManufacturer: Acme Foods", 90.0),
-    )
-    _stub_vision(monkeypatch, packing_date="01/2026")
-    monkeypatch.setattr(scan_route, "get_current_user", lambda: {"sub": "test-user"})
-
-    response = scan(Image.new("RGB", (600, 600), "white"))
-    assert response.status_code == 200
-    data = response.json()
-    assert data["vision_used"] is True
-    assert data["product_information"]["packing_date"]["value"] == "01/2026"
-
-
-def test_vision_conflict_surfaces_uncertain(monkeypatch):
-    monkeypatch.setattr(
-        scan_route,
-        "get_ocr_service",
-        lambda: StubOCR("Rice\nNet Quantity 5 kg\nMRP Rs. 499\nManufacturer: Acme Foods", 45.0),
-    )
-    _stub_vision(monkeypatch, mrp="Rs. 399")
-    monkeypatch.setattr(scan_route, "get_current_user", lambda: {"sub": "test-user"})
-
-    response = scan(Image.new("RGB", (600, 600), "white"))
-    assert response.status_code == 200
-    data = response.json()
-    assert data["vision_used"] is True
-    mrp = data["product_information"]["mrp"]
-    assert mrp["status"] == "uncertain"
-    assert mrp["conflicts"]

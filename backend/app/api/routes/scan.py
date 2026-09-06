@@ -1,16 +1,33 @@
+import json
 import logging
 import uuid
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from PIL import Image
+from starlette.requests import Request
 
 from app.schemas.compliance import ComplianceResult
-from app.schemas.inspection import ScanRequest, ScanResponse
+from app.schemas.inspection import (
+    ImageDetection,
+    ImageQuality,
+    ScanRequest,
+    ScanResponse,
+    ScanSide,
+)
 from app.schemas.product import PRODUCT_FIELDS, ProductField
+from app.core.config import settings
 from app.services.ai_service import AIService
 from app.services.compliance_service import ComplianceService
+from app.services.image_quality import analyze_image_quality
+from app.services.image_validation import (
+    ImageValidationError,
+    to_public_url,
+    validate_upload,
+)
 from app.services.merge_service import merge_sources
-from app.services.ocr_service import get_ocr_service
+from app.services.ocr_service import OCRService, get_ocr_service
+from app.services.package_detector import detect_food_package, DetectionResult
 from app.services.vision_service import (
     VisionExtractionError,
     VisionService,
@@ -21,51 +38,136 @@ from app.api.dependencies import get_current_user
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+_OCR_FAILURE_TEMPLATE: Dict[str, Any] = {
+    "status": "completed_with_warning",
+    "text": "",
+    "raw_text": "",
+    "confidence": 0.0,
+    "engine": "ocr_space",
+    "lines": [],
+    "regions": [],
+    "layout_regions": [],
+    "layout_text": "",
+    "layout_region_count": 0,
+    "image_quality": "unusable",
+    "quality_reason": "OCR could not read the label image.",
+    "quality": {},
+}
+
+
+@router.get("/scan/status", tags=["scan"])
+async def scan_status(current_user: dict = Depends(get_current_user)):
+    """Report pipeline readiness without exposing any secrets.
+
+    The frontend uses this to decide whether the two-image scanner path is
+    available. API keys are never reflected here.
+    """
+    from app.services.ocr_space_service import ocr_space_enabled
+
+    return {
+        "status": "ready",
+        "pipeline": "detection -> quality -> preprocessing -> ocr -> extraction -> compliance",
+        "ocr_engine": "ocr_space",
+        "ocr_configured": ocr_space_enabled(),
+        "multi_image": True,
+        "food_package_confidence_threshold": settings.FOOD_PACKAGE_CONFIDENCE_THRESHOLD,
+        "max_image_size_mb": settings.MAX_IMAGE_SIZE_MB,
+        "ocr_timeout_seconds": settings.OCR_TIMEOUT_SECONDS,
+    }
+
 
 @router.post("/scan", response_model=ScanResponse)
-async def create_scan(request: ScanRequest, current_user: dict = Depends(get_current_user)):
+async def create_scan(request: Request, current_user: dict = Depends(get_current_user)):
     """
     POST /api/scan
-    OCR -> canonical extraction -> (optional) vision fallback -> merge ->
-    compliance. The response contains one canonical ``product_information``
-    object plus the compliance/scores. Request metadata is never substituted
-    for label data.
+
+    Accepts either:
+    * multipart/form-data with ``front_image`` (file) and optional ``back_image``
+      (file) plus text fields matching ScanRequest; or
+    * a JSON body with ``image_url``/``front_image_url`` and optional
+      ``back_image_url`` (backward compatible).
+
+    Pipeline: image validation -> food-package detection -> image-quality ->
+    OCR (front & back) -> text combination -> canonical extraction ->
+    (optional) vision fallback -> merge -> compliance.  Detection, quality and
+    OCR failures are all non-aborting: they produce warnings, never a crash.
     """
-    image_url = request.image_url
-    if not image_url:
-        raise HTTPException(status_code=400, detail="image_url is required for OCR scanning")
+    parsed = await _parse_scan_input(request)
+    sides = parsed["sides"]
+    meta = parsed["metadata"]
+    is_upload = parsed["upload"]
 
     logger.info(
-        "Scan request received: image_url=%s, is_imported=%s",
-        _safe_input_label(image_url),
-        bool(request.is_imported),
+        "Scan request received: sides=%d, upload=%s, is_imported=%s",
+        len(sides),
+        is_upload,
+        bool(meta.is_imported),
     )
 
-    try:
-        ocr_result = get_ocr_service().process_image(image_url)
-    except ValueError as exc:
-        logger.warning("Scan rejected (invalid image input): %s", exc)
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    warnings: List[str] = []
+    per_side: List[ScanSide] = []
+    front_result: Dict[str, Any] = dict(_OCR_FAILURE_TEMPLATE)
+    front_ocr_text = ""
+    front_layout_text = ""
+    front_detection: Optional[ImageDetection] = None
 
-    ocr_text = ocr_result.get("raw_text", "") or ""
-    layout_text = ocr_result.get("layout_text", "") or ""
-    # ROI OCR reads each label region independently (psm 6) and often recovers
-    # small bottom lines (vegetarian mark, FSSAI, certifications) that degrade
-    # in a single full-image pass. Extraction consumes the union of both.
-    extraction_text = _combine_ocr_text(ocr_text, layout_text)
-    ocr_confidence = float(ocr_result.get("confidence", 0.0) or 0.0)
-    ocr_failed = not bool(ocr_text.strip())
+    for index, side in enumerate(sides):
+        label = side["label"]
+        pil_image = side.get("pil_image")
+
+        detection, quality = _detect_and_qualify(side, warnings)
+
+        ocr_result = _run_ocr(side["image_ref"])
+        if index == 0:
+            front_result = ocr_result
+            front_detection = detection
+
+        ocr_text = str(ocr_result.get("raw_text") or ocr_result.get("text") or "").strip()
+        layout_text = str(ocr_result.get("layout_text") or "").strip()
+        if index == 0:
+            front_ocr_text = ocr_text
+            front_layout_text = layout_text
+
+        quality = _merge_quality(quality, ocr_result, label, warnings)
+
+        per_side.append(
+            ScanSide(
+                label=label,
+                source=side.get("source"),
+                ocr_raw_text=ocr_text,
+                ocr_engine=ocr_result.get("engine") or "ocr_space",
+                ocr_confidence=float(ocr_result.get("confidence") or 0.0),
+                ocr_regions=ocr_result.get("regions") or [],
+                layout_regions=ocr_result.get("layout_regions") or [],
+                layout_text=layout_text or None,
+                image_quality=quality,
+                detection=detection,
+            )
+        )
+
+    # ---- Combine OCR text from every side (front then back), plus layout.
+    extraction_text = _combine_ocr_text(front_ocr_text, front_layout_text)
+    for extra_side in per_side[1:]:
+        extraction_text = _combine_ocr_text(
+            extraction_text, extra_side.ocr_raw_text or "", extra_side.layout_text or ""
+        )
+
+    ocr_confidence = float(front_result.get("confidence") or 0.0)
+    ocr_failed = not bool(front_ocr_text.strip())
+    quality_reason = front_result.get("quality_reason")
 
     logger.info(
-        "OCR completed: engine=%s, text_len=%d, confidence=%s, quality=%s, failed=%s",
-        ocr_result.get("engine", "unknown"),
-        len(ocr_text),
+        "OCR completed: engine=%s, sides=%d, text_len=%d, confidence=%s, "
+        "quality=%s, failed=%s",
+        front_result.get("engine", "unknown"),
+        len(per_side),
+        len(extraction_text),
         ocr_confidence,
-        ocr_result.get("image_quality", "unknown"),
+        front_result.get("image_quality", "unknown"),
         ocr_failed,
     )
 
-    # Canonical OCR extraction (per-field value/status/confidence/source).
+    # ---- Canonical OCR extraction (per-field value/status/confidence/source).
     logger.info("Analysis started (field extraction)")
     ocr_info, extraction_conf = AIService.extract_product_information(
         extraction_text, ocr_confidence=ocr_confidence
@@ -74,28 +176,31 @@ async def create_scan(request: ScanRequest, current_user: dict = Depends(get_cur
     vision_used = False
     vision_error: Optional[str] = None
     extraction_source = "ocr"
-    if should_use_vision_fallback(ocr_confidence, ocr_failed, ocr_info):
+    final_info = ocr_info.as_dict()
+    front_image_ref = sides[0]["image_ref"] if sides else None
+    if (
+        settings.ENABLE_VISION_FALLBACK
+        and front_image_ref
+        and should_use_vision_fallback(ocr_confidence, ocr_failed, ocr_info)
+    ):
         try:
-            vision_fields = VisionService.extract(image_url)
+            vision_fields = VisionService.extract(front_image_ref)
             final_info = merge_sources(ocr_info, vision_fields)
             vision_used = True
-            extraction_source = "ocr+vision" if ocr_text.strip() else "vision"
+            extraction_source = "ocr+vision" if front_ocr_text.strip() else "vision"
         except VisionExtractionError as exc:
             # Vision is an optional fallback: never destroy usable OCR results.
             vision_error = str(exc)
             logger.warning("Vision fallback unavailable: %s", exc)
             final_info = ocr_info.as_dict()
             extraction_source = "ocr"
-    else:
-        final_info = ocr_info.as_dict()
 
     product_information: Dict[str, ProductField] = {
         key: final_info[key] for key in PRODUCT_FIELDS
     }
 
     inspection_id = f"INS-{uuid.uuid4().hex[:8].upper()}"
-    quality_reason = ocr_result.get("quality_reason")
-    unusable_quality = ocr_result.get("image_quality") in {"poor", "unusable"}
+    unusable_quality = front_result.get("image_quality") in {"poor", "unusable"}
     detected = [
         entry
         for entry in product_information.values()
@@ -132,7 +237,7 @@ async def create_scan(request: ScanRequest, current_user: dict = Depends(get_cur
         compliance = ComplianceService.evaluate_compliance(
             inspection_id=inspection_id,
             product_information=product_information,
-            is_imported=bool(request.is_imported),
+            is_imported=bool(meta.is_imported),
         )
         logger.info("Compliance analysis completed")
         overall_result = compliance.overall_result
@@ -153,27 +258,31 @@ async def create_scan(request: ScanRequest, current_user: dict = Depends(get_cur
             message = f"Scan completed with partial information. {report}"
 
     logger.info(
-        "Scan completed: id=%s, status=%s, score=%s, overall=%s, engine=%s",
+        "Scan completed: id=%s, status=%s, score=%s, overall=%s, engine=%s, parts=%d",
         inspection_id,
         result_status,
         score,
         overall_result,
-        ocr_result.get("engine", "unknown"),
+        front_result.get("engine", "unknown"),
+        len(per_side),
     )
 
-    return ScanResponse(
+    front_side = per_side[0] if per_side else None
+    back_side = per_side[1] if len(per_side) > 1 else None
+
+    response = ScanResponse(
         status=result_status,
         success=True,
         scan_completed=True,
         inspection_id=inspection_id,
         message=message,
-        ocr_raw_text=ocr_text,
-        ocr_engine=ocr_result.get("engine", "tesseract"),
+        ocr_raw_text=front_ocr_text,
+        ocr_engine=front_result.get("engine", "tesseract"),
         ocr_confidence=ocr_confidence,
-        ocr_regions=ocr_result.get("regions", []),
-        layout_regions=ocr_result.get("layout_regions", []),
-        layout_text=ocr_result.get("layout_text"),
-        layout_region_count=ocr_result.get("layout_region_count", 0),
+        ocr_regions=front_result.get("regions", []),
+        layout_regions=front_result.get("layout_regions", []),
+        layout_text=front_layout_text or None,
+        layout_region_count=front_result.get("layout_region_count", 0),
         extracted_declarations=_flat_extraction(product_information),
         product_information=product_information,
         extraction_source=extraction_source,
@@ -185,29 +294,279 @@ async def create_scan(request: ScanRequest, current_user: dict = Depends(get_cur
         compliance_score=compliance_score,
         risk_score=risk_score,
         overall_result=overall_result,
-        image_quality=ocr_result.get("image_quality", "unknown"),
+        image_quality=front_result.get("image_quality", "unknown"),
         quality_reason=quality_reason,
         report=report,
+        front_side=front_side,
+        back_side=back_side,
+        images_processed=len(per_side),
+        detection=front_detection,
+        warnings=warnings,
+    )
+
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Input parsing (multipart upload OR legacy JSON body)
+# ---------------------------------------------------------------------------
+
+
+async def _parse_scan_input(request: Request) -> dict:
+    content_type = (request.headers.get("content-type") or "").lower()
+    if content_type.startswith("application/json"):
+        return await _parse_json_body(request)
+    if content_type.startswith("multipart/form-data"):
+        return await _parse_multipart_body(request)
+    raise HTTPException(
+        status_code=400,
+        detail="Content-Type must be application/json or multipart/form-data.",
     )
 
 
-def _safe_input_label(image_url: str) -> str:
-    """Redact signed-URL tokens and expose only the input scheme for logging."""
+async def _parse_json_body(request: Request) -> dict:
     try:
-        if image_url.startswith("data:image"):
-            return "data-uri"
-        if "http://" in image_url or "https://" in image_url:
-            from urllib.parse import urlparse
+        payload = json.loads((await request.body()).decode("utf-8") or "{}")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Request body is not valid JSON.") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Request body must be a JSON object.")
 
-            host = urlparse(image_url).netloc or "url"
-            return f"https://{host}"
+    try:
+        req = ScanRequest.model_validate(payload)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid scan request: {exc}") from exc
+
+    front_ref = str(req.front_image_url or req.image_url or "").strip()
+    back_ref = str(req.back_image_url or "").strip()
+
+    if not front_ref:
+        raise HTTPException(status_code=400, detail="image_url is required for OCR scanning")
+
+    sides = [
+        _make_side_input("front", "url", front_ref),
+    ]
+    if back_ref and back_ref != front_ref:
+        sides.append(_make_side_input("back", "url", back_ref))
+    return {"sides": sides, "metadata": req, "upload": False}
+
+
+async def _parse_multipart_body(request: Request) -> dict:
+    try:
+        form = await request.form()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400, detail=f"Could not parse multipart form: {exc}"
+        ) from exc
+
+    front_file: Optional[UploadFile] = form.get("front_image")
+    back_file: Optional[UploadFile] = form.get("back_image")
+
+    sides = []
+    if _has_file(front_file):
+        sides.append(await _make_upload_side("front", front_file))
+    if _has_file(back_file):
+        sides.append(await _make_upload_side("back", back_file))
+
+    if not sides:
+        raise HTTPException(status_code=400, detail="front_image is required for OCR scanning")
+
+    try:
+        meta = ScanRequest(
+            product_name=_form_str(form, "product_name"),
+            brand_name=_form_str(form, "brand_name"),
+            manufacturer=_form_str(form, "manufacturer"),
+            manufacturer_name=_form_str(form, "manufacturer_name"),
+            category=_form_str(form, "category"),
+            product_category=_form_str(form, "product_category"),
+            is_imported=_form_bool(form, "is_imported"),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid scan request metadata: {exc}"
+        ) from exc
+    return {"sides": sides, "metadata": meta, "upload": True}
+
+
+def _has_file(file: Any) -> bool:
+    return file is not None and bool(getattr(file, "filename", None))
+
+
+async def _make_upload_side(label: str, upload: UploadFile) -> dict:
+    try:
+        data = await upload.read()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Could not read uploaded image: {exc}") from exc
+    try:
+        validated = validate_upload(
+            data,
+            filename=getattr(upload, "filename", None),
+            content_type=getattr(upload, "content_type", None),
+        )
+    except ImageValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    image_ref = to_public_url(validated, label)
+    return {
+        "label": label,
+        "source": "upload",
+        "image_ref": image_ref,
+        "pil_image": validated.image,
+    }
+
+
+def _form_str(form: Any, key: str) -> Optional[str]:
+    value = form.get(key)
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _form_bool(form: Any, key: str) -> bool:
+    value = form.get(key)
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _make_side_input(label: str, source: str, image_ref: str) -> dict:
+    return {
+        "label": label,
+        "source": source,
+        "image_ref": image_ref,
+        "pil_image": _load_pil(image_ref),
+    }
+
+
+def _load_pil(image_ref: str) -> Optional[Image.Image]:
+    """Best-effort PIL load for detection/quality. Never raises."""
+    try:
+        return OCRService._fetch_image(image_ref)
     except Exception:
-        pass
-    return "local-path"
+        return None
 
 
-def _combine_ocr_text(full_ocr: str, layout_ocr: str) -> str:
-    """Merge ROI OCR lines into the full-image OCR text.
+# ---------------------------------------------------------------------------
+# Pipeline stages (detection + quality), all non-aborting
+# ---------------------------------------------------------------------------
+
+
+def _detect_and_qualify(side: dict, warnings: List[str]):
+    """Run food-package detection and image-quality analysis for one side.
+
+    Returns ``(detection, quality)``. Any failure degrades to None and adds a
+    warning — it never aborts the scan.
+    """
+    label = side["label"]
+    pil_image = side.get("pil_image")
+    detection: Optional[ImageDetection] = None
+    quality: Optional[ImageQuality] = None
+
+    if pil_image is None:
+        warnings.append(f"Image '{label}' could not be loaded for quality/detection analysis.")
+        return detection, quality
+
+    try:
+        result = analyze_image_quality(pil_image)
+        quality = ImageQuality(
+            overall=result.overall, score=result.score, reason=result.reason_text or None
+        )
+        if result.overall == "unusable":
+            warnings.append(
+                f"Image '{label}' quality is unusable: {result.reason_text}. Continuing the scan."
+            )
+        elif result.overall == "poor":
+            warnings.append(
+                f"Image '{label}' quality is poor: {result.reason_text}."
+            )
+    except Exception as exc:
+        logger.warning("Quality analysis failed for %s: %s", label, exc)
+        warnings.append(f"Image '{label}' quality could not be analyzed.")
+
+    try:
+        det: DetectionResult = detect_food_package(
+            pil_image, threshold=settings.FOOD_PACKAGE_CONFIDENCE_THRESHOLD
+        )
+        detection = ImageDetection(
+            is_food_package=det.is_food_package,
+            confidence=det.confidence,
+            reason=det.reason,
+        )
+        if label == "front" and not det.is_food_package:
+            warnings.append(
+                f"Front image did not look like a food package ({det.reason})."
+            )
+        else:
+            logger.info(
+                "Package detection (%s): is_food=%s confidence=%.2f",
+                label,
+                det.is_food_package,
+                det.confidence,
+            )
+    except Exception as exc:
+        logger.warning("Package detection failed for %s: %s", label, exc)
+        warnings.append(f"Food-package detection failed for '{label}'.")
+
+    return detection, quality
+
+
+def _run_ocr(image_ref: str) -> Dict[str, Any]:
+    """Run the production OCR engine; a partial failure returns a warning dict."""
+    try:
+        result = get_ocr_service().process_image(image_ref)
+        if isinstance(result, dict):
+            return result
+        return dict(_OCR_FAILURE_TEMPLATE)
+    except ValueError:
+        raise
+    except Exception as exc:
+        logger.error("OCR unexpectedly raised during scan: %s", exc)
+        failure = dict(_OCR_FAILURE_TEMPLATE)
+        failure["quality_reason"] = str(exc)
+        return failure
+
+
+def _merge_quality(
+    quality: Optional[ImageQuality],
+    ocr_result: Dict[str, Any],
+    label: str,
+    warnings: List[str],
+) -> Optional[ImageQuality]:
+    """Combine the static quality stage with the OCR engine's own verdict.
+
+    When OCR reports a degraded grade (poor/unusable) that the static stage
+    missed, the per-side quality reflects the stricter (OCR) verdict — OCR
+    success/failure is the ground truth of whether text was readable.
+    """
+    ocr_grade = ocr_result.get("image_quality")
+    ocr_reason = ocr_result.get("quality_reason")
+
+    if quality is None and ocr_grade:
+        quality = ImageQuality(overall=str(ocr_grade), score=0, reason=ocr_reason)
+    elif ocr_grade in {"poor", "unusable"} and quality is not None:
+        if ocr_grade == "unusable" and quality.overall != "unusable":
+            combined_reason = "; ".join(
+                filter(None, (quality.reason, ocr_reason))
+            )
+            quality = ImageQuality(
+                overall="unusable",
+                score=0,
+                reason=combined_reason or None,
+            )
+            warnings.append(
+                f"Image '{label}' OCR was unreadable{(': ' + ocr_reason) if ocr_reason else ''}."
+            )
+        elif ocr_grade == "poor" and quality.overall == "usable":
+            quality = ImageQuality(
+                overall="poor",
+                score=min(quality.score, 59),
+                reason=ocr_reason or quality.reason,
+            )
+    return quality
+
+
+def _combine_ocr_text(*texts: str) -> str:
+    """Merge multiple OCR passes, dropping duplicate lines.
 
     Full-image OCR keeps its reading order (the title line stays first). Lines
     the single-pass pass missed or garbled are appended once; duplicates are
@@ -215,14 +574,15 @@ def _combine_ocr_text(full_ocr: str, layout_ocr: str) -> str:
     """
     seen = set()
     merged: List[str] = []
-    for line in (*((full_ocr or "").splitlines()), *((layout_ocr or "").splitlines())):
-        stripped = line.strip()
-        if not stripped:
-            continue
-        key = stripped.casefold()
-        if key not in seen:
-            seen.add(key)
-            merged.append(stripped)
+    for text in texts:
+        for line in (text or "").splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            key = stripped.casefold()
+            if key not in seen:
+                seen.add(key)
+                merged.append(stripped)
     return "\n".join(merged)
 
 
