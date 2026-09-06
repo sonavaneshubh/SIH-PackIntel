@@ -1,0 +1,75 @@
+
+> packintel@0.1.0 dev
+> next dev
+
+   ▲ Next.js 15.5.23
+   - Local:        http://localhost:3001
+   - Network:      http://10.55.162.30:3001
+   - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 2.4s
+ ○ Compiling / ...
+ ✓ Compiled / in 1955ms (760 modules)
+ GET / 200 in 2395ms
+ ✓ Compiled in 146ms (307 modules)
+ GET / 200 in 83ms
+ ✓ Compiled /login in 300ms (470 modules)
+ ✓ Compiled in 194ms (295 modules)
+ GET /icon.svg?ab7577bf9d99e304 200 in 699ms
+ GET /login 200 in 645ms
+ GET /login 200 in 231ms
+ GET /icon.svg?ab7577bf9d99e304 200 in 17ms
+ GET / 200 in 39ms
+ GET / 200 in 35ms
+ ✓ Compiled /scan/new in 458ms (825 modules)
+ GET /scan/new 200 in 553ms
+ GET / 200 in 34ms
+ GET /scan/new 200 in 34ms
+ ✓ Compiled /results in 417ms (836 modules)
+ GET /results?inspection=dc5e7d22-bd06-4feb-8184-3efb34c1eb1e 200 in 509ms
+ GET /scan/new 200 in 65ms
+ GET /results?inspection=2a761361-507b-4780-b40b-cd7cf2b61800 200 in 27ms
+ GET /scan/new 200 in 27ms
+ GET /results?inspection=886397f2-2db1-4fd1-8514-d668cdb30bc4 200 in 63ms
+ GET /scan/new 200 in 39ms
+ GET /results?inspection=91feae38-3185-4a95-b56f-0b575c0a3a4c 200 in 22ms
+ ✓ Compiled in 1318ms (833 modules)
+ ✓ Compiled in 1048ms (833 modules)
+ ✓ Compiled in 779ms (845 modules)
+ ✓ Compiled in 652ms (845 modules)
+ ✓ Compiled in 499ms (845 modules)
+ ✓ Compiled in 393ms (845 modules)
+ ✓ Compiled in 538ms (845 modules)
+ ✓ Compiled in 329ms (831 modules)
+ ✓ Compiled in 303ms (831 modules)
+ ✓ Compiled in 368ms (831 modules)
+ ✓ Compiled in 248ms (831 modules)
+ ✓ Compiled in 250ms (831 modules)
+ ✓ Compiled in 556ms (845 modules)
+ ✓ Compiled in 504ms (845 modules)
+ ✓ Compiled in 573ms (845 modules)
+ ✓ Compiled in 510ms (845 modules)
+ ✓ Compiled in 489ms (845 modules)
+ ✓ Compiled in 462ms (845 modules)
+ ✓ Compiled in 1039ms (843 modules)
+ ✓ Compiled in 404ms (843 modules)
+ ✓ Compiled in 1404ms (843 modules)
+ ✓ Compiled in 938ms (843 modules)
+ ✓ Compiled in 1719ms (843 modules)
+ ✓ Compiled in 938ms (843 modules)
+ ✓ Compiled in 1432ms (843 modules)
+ ✓ Compiled in 4.2s (843 modules)
+ ✓ Compiled in 972ms (843 modules)
+ ✓ Compiled in 557ms (343 modules)
+ ✓ Compiled in 430ms (829 modules)
+ ✓ Compiled in 479ms (829 modules)
+ ✓ Compiled in 616ms (829 modules)
+ ✓ Compiled in 502ms (829 modules)
+ ✓ Compiled in 559ms (829 modules)
+ ✓ Compiled in 522ms (829 modules)
+ ✓ Compiled in 662ms (829 modules)
+ ✓ Compiled in 630ms (843 modules)
+ ✓ Compiled in 520ms (829 modules)
+ ✓ Compiled in 604ms (829 modules)
+ ✓ Compiled in 2.5s (843 modules)

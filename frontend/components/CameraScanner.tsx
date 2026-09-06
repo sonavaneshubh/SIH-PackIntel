@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -10,21 +10,10 @@ import {
   Redo2,
   Rotate3D,
   ShieldAlert,
-  VideoOff,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import {
-  CameraFailureInfo,
-  ObjectCategory,
-  ScannerPhase,
-  ScannerState,
-} from '@/types/scanner';
-import {
-  assessCaptureQuality,
-  frameSignature,
-  heuristicPackageDetector,
-  signatureDiff,
-} from '@/lib/scanner/packageDetector';
+import { CameraFailureInfo, ScannerPhase, ScannerState } from '@/types/scanner';
+import { assessCaptureQuality } from '@/lib/scanner/packageDetector';
 
 export interface CaptureSideResult {
   side: ScannerPhase;
@@ -43,41 +32,27 @@ export interface CameraScannerProps {
   onCameraStateChange?: (state: ScannerState) => void;
 }
 
-const ANALYSIS_INTERVAL_MS = 160;
-const STABILITY_DURATION_MS = 1100;
 const TURN_DELAY_MS = 1400;
-const FRAME_CHANGE_THRESHOLD = 0.1;
-const FRAME_CHANGE_HOLDS = 3;
 const MIN_CAPTURE_WIDTH = 320;
 
 export const STATUS_LABELS: Record<ScannerState, string> = {
   initializing: 'Initializing camera',
   permission_required: 'Waiting for camera permission',
   camera_ready: 'Camera Ready',
-  searching_for_package: 'Searching for food package',
-  package_detected: 'Food package detected',
+  searching_for_package: 'Point at front side',
+  package_detected: 'Package detected',
   stabilizing: 'Hold steady',
   capturing_front: 'Capturing front',
   front_captured: 'Front captured',
   turn_package: 'Turn package around',
-  searching_back: 'Searching for back side',
-  back_detected: 'Back side detected',
+  searching_back: 'Point at back side',
+  back_detected: 'Package detected',
   capturing_back: 'Capturing back',
   processing: 'Processing',
   completed: 'Completed',
   camera_error: 'Camera error',
   permission_denied: 'Camera access blocked',
 };
-
-const SCANNING_PHASES: ScannerState[] = [
-  'camera_ready',
-  'searching_for_package',
-  'package_detected',
-  'stabilizing',
-  'turn_package',
-  'searching_back',
-  'back_detected',
-];
 
 const MAX_CAMERA_RETRIES = 3;
 const CAMERA_RETRY_DELAY_MS = 1500;
@@ -113,10 +88,7 @@ function toCameraFailure(error: unknown): CameraFailureInfo {
 }
 
 const isScanningOverlay = (state: ScannerState) =>
-  state === 'capturing_front' ||
-  state === 'capturing_back' ||
-  state === 'processing' ||
-  state === 'completed';
+  state === 'capturing_front' || state === 'capturing_back' || state === 'processing';
 
 export function CameraScanner({
   onCaptureComplete,
@@ -126,26 +98,20 @@ export function CameraScanner({
   const videoRef = useRef<HTMLVideoElement>(null);
   const captureCanvasRef = useRef<HTMLCanvasElement>(null);
   const analysisCanvasRef = useRef<HTMLCanvasElement>(null);
-  const signatureCanvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const cameraRetryTimerRef = useRef<number | null>(null);
   const captureLockedRef = useRef(false);
-  const stableSinceRef = useRef<number | null>(null);
-  const lastPositionRef = useRef<{ x: number; y: number } | null>(null);
-  const frontSignatureRef = useRef<Uint8Array | null>(null);
-  const turnHoldCountRef = useRef(0);
   const transitionTimerRef = useRef<number | null>(null);
   const frontSideRef = useRef<CaptureSideResult | null>(null);
   const scanSideRef = useRef<ScannerPhase>('front');
-  const phaseRef = useRef<ScannerState>('initializing');
 
   const [phase, setPhaseState] = useState<ScannerState>('initializing');
   const [cameraError, setCameraErrorInfo] = useState<CameraFailureInfo | null>(null);
-  const [stabilityProgress, setStabilityProgress] = useState(0);
-  const [lastCategory, setLastCategory] = useState<ObjectCategory>('unknown');
   const [frontSide, setFrontSide] = useState<CaptureSideResult | null>(null);
   const [backSide, setBackSide] = useState<CaptureSideResult | null>(null);
   const [scanSide, setScanSideState] = useState<ScannerPhase>('front');
+
+  const phaseRef = useRef<ScannerState>('initializing');
 
   const setPhase = useCallback(
     (next: ScannerState) => {
@@ -165,14 +131,6 @@ export function CameraScanner({
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
-  }, []);
-
-  const resetScanState = useCallback(() => {
-    stableSinceRef.current = null;
-    lastPositionRef.current = null;
-    turnHoldCountRef.current = 0;
-    setStabilityProgress(0);
-    setLastCategory('unknown');
   }, []);
 
   const startCamera = useCallback(
@@ -230,16 +188,12 @@ export function CameraScanner({
             setPhase('camera_error');
           });
         }
-        resetScanState();
+        setScanSide('front');
         setPhase('camera_ready');
       } catch (error) {
         const info = toCameraFailure(error);
-        if (
-          info.reason === 'not_readable' &&
-          attempt < MAX_CAMERA_RETRIES
-        ) {
-          if (cameraRetryTimerRef.current !== null)
-            window.clearTimeout(cameraRetryTimerRef.current);
+        if (info.reason === 'not_readable' && attempt < MAX_CAMERA_RETRIES) {
+          if (cameraRetryTimerRef.current !== null) window.clearTimeout(cameraRetryTimerRef.current);
           cameraRetryTimerRef.current = window.setTimeout(() => {
             void startCamera(false, attempt + 1);
           }, CAMERA_RETRY_DELAY_MS);
@@ -249,16 +203,16 @@ export function CameraScanner({
         setPhase(info.reason === 'not_allowed' ? 'permission_denied' : 'camera_error');
       }
     },
-    [resetScanState, setPhase, stopStream]
+    [setPhase, setScanSide, stopStream]
   );
 
   useEffect(() => {
     void startCamera(true);
-      return () => {
-        if (transitionTimerRef.current !== null) window.clearTimeout(transitionTimerRef.current);
-        if (cameraRetryTimerRef.current !== null) window.clearTimeout(cameraRetryTimerRef.current);
-        stopStream();
-      };
+    return () => {
+      if (transitionTimerRef.current !== null) window.clearTimeout(transitionTimerRef.current);
+      if (cameraRetryTimerRef.current !== null) window.clearTimeout(cameraRetryTimerRef.current);
+      stopStream();
+    };
   }, [startCamera, stopStream]);
 
   useEffect(() => {
@@ -289,8 +243,7 @@ export function CameraScanner({
       captureLockedRef.current = true;
       if (video.videoWidth < MIN_CAPTURE_WIDTH) {
         captureLockedRef.current = false;
-        resetScanState();
-        setPhase(side === 'front' ? 'searching_for_package' : 'searching_back');
+        setPhase(side === 'front' ? 'camera_ready' : 'turn_package');
         return;
       }
       const clientQuality = assessCaptureQuality(video, analysisCanvas);
@@ -301,7 +254,7 @@ export function CameraScanner({
       const context = canvas.getContext('2d');
       if (!context) {
         captureLockedRef.current = false;
-        setPhase(side === 'front' ? 'searching_for_package' : 'searching_back');
+        setPhase(side === 'front' ? 'camera_ready' : 'turn_package');
         return;
       }
       context.drawImage(video, 0, 0, canvas.width, canvas.height);
@@ -310,7 +263,7 @@ export function CameraScanner({
         (blob) => {
           if (!blob) {
             captureLockedRef.current = false;
-            setPhase(side === 'front' ? 'searching_for_package' : 'searching_back');
+            setPhase(side === 'front' ? 'camera_ready' : 'turn_package');
             return;
           }
           const file = new File([blob], `food-package-${side}-${Date.now()}.jpg`, {
@@ -324,14 +277,11 @@ export function CameraScanner({
           };
 
           if (side === 'front') {
-            frontSignatureRef.current = frameSignature(video, signatureCanvasRef.current);
             frontSideRef.current = result;
             setFrontSide(result);
-            setStabilityProgress(0);
             onSideCaptured?.(result);
             setPhase('front_captured');
             transitionTimerRef.current = window.setTimeout(() => {
-              turnHoldCountRef.current = 0;
               setScanSide('back');
               setPhase('turn_package');
             }, TURN_DELAY_MS);
@@ -346,118 +296,8 @@ export function CameraScanner({
         0.92
       );
     },
-    [onSideCaptured, resetScanState, setPhase, setScanSide]
+    [onSideCaptured, setPhase, setScanSide]
   );
-
-  useEffect(() => {
-    if (!SCANNING_PHASES.includes(phase)) return;
-    const activePhase = () => phaseRef.current;
-    const timer = window.setInterval(() => {
-      const video = videoRef.current;
-      const canvas = analysisCanvasRef.current;
-      if (
-        !video ||
-        !canvas ||
-        video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
-        !video.videoWidth ||
-        !video.videoHeight ||
-        captureLockedRef.current
-      ) {
-        return;
-      }
-      const currentPhase = activePhase();
-
-      if (currentPhase === 'camera_ready') {
-        setPhase('searching_for_package');
-        return;
-      }
-
-      if (currentPhase === 'turn_package') {
-        const current = frameSignature(video, signatureCanvasRef.current);
-        if (current && frontSignatureRef.current) {
-          const diff = signatureDiff(current, frontSignatureRef.current);
-          if (diff > FRAME_CHANGE_THRESHOLD) {
-            turnHoldCountRef.current += 1;
-            if (turnHoldCountRef.current >= FRAME_CHANGE_HOLDS) {
-              turnHoldCountRef.current = 0;
-              resetScanState();
-              setPhase('searching_back');
-            }
-          } else {
-            turnHoldCountRef.current = 0;
-          }
-        }
-        return;
-      }
-
-      const result = heuristicPackageDetector.analyze(video, canvas);
-      const isFoodPackage = result.detected && result.category === 'food_package';
-
-      if (!isFoodPackage) {
-        stableSinceRef.current = null;
-        lastPositionRef.current = null;
-        setStabilityProgress(0);
-        setLastCategory(result.category);
-        if (currentPhase === 'package_detected' || currentPhase === 'stabilizing' || currentPhase === 'back_detected') {
-          setPhase(currentPhase === 'back_detected' ? 'searching_back' : 'searching_for_package');
-        }
-        return;
-      }
-
-      if (!result.inFrame) {
-        stableSinceRef.current = null;
-        lastPositionRef.current = null;
-        setStabilityProgress(0);
-        setLastCategory('food_package');
-        if (currentPhase === 'package_detected' || currentPhase === 'stabilizing' || currentPhase === 'back_detected') {
-          setPhase(currentPhase === 'back_detected' ? 'searching_back' : 'searching_for_package');
-        }
-        return;
-      }
-
-      const now = performance.now();
-      const last = lastPositionRef.current;
-      const moved = last
-        ? Math.hypot(result.centerX - last.x, result.centerY - last.y)
-        : 1;
-      lastPositionRef.current = { x: result.centerX, y: result.centerY };
-      setLastCategory('food_package');
-
-      if (
-        currentPhase === 'searching_for_package' ||
-        currentPhase === 'searching_back'
-      ) {
-        stableSinceRef.current = now;
-        setPhase(
-          scanSideRef.current === 'back'
-            ? 'back_detected'
-            : 'package_detected'
-        );
-        return;
-      }
-
-      if (currentPhase === 'package_detected' || currentPhase === 'back_detected') {
-        stableSinceRef.current = now;
-        setPhase('stabilizing');
-        return;
-      }
-
-      // stabilizing
-      if (stableSinceRef.current === null) {
-        stableSinceRef.current = now;
-      } else if (moved > 0.045) {
-        stableSinceRef.current = now;
-      }
-      const elapsed = now - stableSinceRef.current;
-      const progress = Math.min(100, Math.round((elapsed / STABILITY_DURATION_MS) * 100));
-      setStabilityProgress(progress);
-      if (progress >= 100) {
-        setStabilityProgress(0);
-        captureSide(scanSideRef.current);
-      }
-    }, ANALYSIS_INTERVAL_MS);
-    return () => window.clearInterval(timer);
-  }, [captureSide, phase, resetScanState, setPhase]);
 
   useEffect(() => {
     return () => {
@@ -470,31 +310,21 @@ export function CameraScanner({
     void startCamera(false);
   }, [startCamera]);
 
+  const captureDisabled =
+    captureLockedRef.current || phase === 'processing' || phase === 'capturing_front' || phase === 'capturing_back';
+  const captureLabel =
+    phase === 'processing'
+      ? 'Analyzing...'
+      : scanSide === 'back'
+        ? 'Capture Back Side'
+        : 'Capture Front Side';
+
   const frameOverlayActive =
     phase === 'camera_ready' ||
     phase === 'searching_for_package' ||
-    phase === 'package_detected' ||
-    phase === 'stabilizing' ||
     phase === 'searching_back' ||
-    phase === 'back_detected';
-
-  const isSearching =
-    phase === 'searching_for_package' || phase === 'camera_ready' || phase === 'searching_back';
-  const isDetected =
-    phase === 'package_detected' || phase === 'back_detected' || phase === 'stabilizing';
-
-  const guidance = isSearching
-    ? lastCategory === 'person'
-      ? { title: 'No food package detected', subtitle: 'Place a packaged food product inside the scanning area.' }
-      : lastCategory === 'non_food_object'
-        ? { title: 'Object detected', subtitle: 'Please place a packaged food product inside the scanning area.' }
-        : {
-            title: 'Searching for food package',
-            subtitle: 'Place a packaged food product inside the scanning frame.',
-          }
-    : isDetected
-      ? { title: 'Food package detected', subtitle: 'Hold steady...' }
-      : { title: '', subtitle: '' };
+    phase === 'front_captured' ||
+    phase === 'turn_package';
 
   return (
     <div className="mt-6">
@@ -509,11 +339,8 @@ export function CameraScanner({
         />
         <canvas ref={captureCanvasRef} className="hidden" />
         <canvas ref={analysisCanvasRef} className="hidden" />
-        <canvas ref={signatureCanvasRef} className="hidden" />
 
-        <div
-          className={`absolute inset-x-0 top-0 z-10 flex items-center justify-between px-4 py-3`}
-        >
+        <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-4 py-3">
           <span className="rounded bg-black/55 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-[#cbd5e1] backdrop-blur-sm">
             Step {scanSide === 'front' ? '1' : '2'} of 2 — Scan {scanSide === 'front' ? 'Front' : 'Back'} Side
           </span>
@@ -523,20 +350,14 @@ export function CameraScanner({
                 <span className="scanner-dot-ping absolute inline-flex size-full rounded-full bg-[#00bfa5]" />
                 <span className="relative inline-flex size-1.5 rounded-full bg-[#00bfa5]" />
               </span>
-              Auto scanning enabled
+              Ready to capture
             </span>
           )}
         </div>
 
         {frameOverlayActive && (
           <div className="pointer-events-none absolute inset-0 z-[5]">
-            <div
-              className={`absolute inset-[6%] rounded-2xl border-2 transition-all duration-300 ${
-                phase === 'stabilizing' || phase === 'package_detected' || phase === 'back_detected'
-                  ? 'scanner-detected-glow border-[#00bfa5]'
-                  : 'scanner-border-active border-[#00bfa5]/60'
-              }`}
-            />
+            <div className="absolute inset-[6%] rounded-2xl border-2 border-[#00bfa5]/60 transition-all duration-300" />
             <div className="absolute inset-[6%] rounded-2xl">
               {['top-left', 'top-right', 'bottom-left', 'bottom-right'].map((corner) => (
                 <span
@@ -553,31 +374,25 @@ export function CameraScanner({
                 />
               ))}
             </div>
-            {phase === 'searching_for_package' || phase === 'camera_ready' || phase === 'searching_back' ? (
-              <div className="scanner-scan-line absolute inset-x-[9%] h-[2px] rounded-full bg-gradient-to-r from-transparent via-[#2dd4bf]/80 to-transparent" />
-            ) : null}
           </div>
         )}
 
-        {frameOverlayActive && (
-          <div className="pointer-events-none absolute inset-0 z-[6] flex flex-col items-center justify-center px-6 text-center">
-            <div className="scanner-fade-in-up flex flex-col items-center rounded-lg bg-black/40 px-4 py-2 backdrop-blur-[2px]">
-              <p className="text-sm font-semibold text-white">{guidance.title}</p>
-              <p className="mt-0.5 text-[11px] text-[#cbd5e1]">{guidance.subtitle}</p>
+        {(phase === 'camera_ready' || phase === 'searching_for_package' || phase === 'searching_back' || phase === 'turn_package') && (
+          <div className="pointer-events-none absolute inset-x-[6%] bottom-4 z-[6] flex flex-col items-center">
+            <div className="scanner-fade-in-up flex flex-col items-center rounded-lg bg-black/40 px-4 py-2 text-center backdrop-blur-[2px]">
+              <p className="text-sm font-semibold text-white">
+                {phase === 'turn_package'
+                  ? 'Turn the package around'
+                  : scanSide === 'back'
+                    ? 'Point at the back side'
+                    : 'Point at the front side'}
+              </p>
+              <p className="mt-0.5 text-[11px] text-[#cbd5e1]">
+                {phase === 'turn_package'
+                  ? 'When ready, tap the capture button below.'
+                  : 'When ready, tap the capture button below.'}
+              </p>
             </div>
-            {(phase === 'stabilizing' || phase === 'package_detected' || phase === 'back_detected') && (
-              <div className="mt-3 flex flex-col items-center">
-                <div className="h-1 w-40 overflow-hidden rounded-full bg-white/20">
-                  <div
-                    className="h-full rounded-full bg-[#00bfa5] transition-[width] duration-150 ease-linear"
-                    style={{ width: `${stabilityProgress}%` }}
-                  />
-                </div>
-                <p className="mt-1.5 font-mono text-[10px] text-[#00bfa5]">
-                  {stabilityProgress}% stable
-                </p>
-              </div>
-            )}
           </div>
         )}
 
@@ -587,23 +402,6 @@ export function CameraScanner({
               <Check size={28} aria-hidden="true" />
             </span>
             <p className="mt-3 text-base font-bold text-white">Front side captured</p>
-          </div>
-        )}
-
-        {phase === 'turn_package' && (
-          <div className="scanner-fade-in-up absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/55 px-6 text-center backdrop-blur-sm">
-            <span className="scanner-check-pop flex size-14 items-center justify-center rounded-full bg-[#00bfa5] text-white">
-              <Rotate3D size={26} aria-hidden="true" />
-            </span>
-            <p className="mt-3 text-base font-bold text-white">Turn the package around</p>
-            <p className="mt-1 text-xs text-[#cbd5e1]">Scan the BACK SIDE</p>
-            <p className="mt-3 flex items-center gap-1.5 text-[11px] font-semibold text-[#00bfa5]">
-              <span className="relative flex size-1.5">
-                <span className="scanner-dot-ping absolute inline-flex size-full rounded-full bg-[#00bfa5]" />
-                <span className="relative inline-flex size-1.5 rounded-full bg-[#00bfa5]" />
-              </span>
-              Auto scanning enabled
-            </p>
           </div>
         )}
 
@@ -631,8 +429,8 @@ export function CameraScanner({
             </span>
             <p className="mt-3 text-[15px] font-bold text-white">Camera Access Blocked</p>
             <p className="mt-1.5 max-w-[320px] text-xs leading-relaxed text-[#94a3b8]">
-              Camera permission is required for automatic scanning. Please allow camera access
-              in your browser settings and try again.
+              Camera permission is required for scanning. Please allow camera access in your
+              browser settings and try again.
             </p>
             <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
               <Button variant="outline" size="sm" onClick={retryCamera}>
@@ -680,31 +478,16 @@ export function CameraScanner({
         <div className="pointer-events-none absolute inset-x-4 bottom-3 z-[7] flex items-center justify-between">
           <span
             className={`flex items-center gap-1.5 rounded bg-black/55 px-2 py-1 text-[10px] font-semibold tracking-wide backdrop-blur-sm ${
-              phase === 'stabilizing'
-                ? 'text-[#00bfa5]'
-                : phase === 'permission_denied' || phase === 'camera_error'
-                  ? 'text-amber-400'
-                  : 'text-[#cbd5e1]'
+              phase === 'permission_denied' || phase === 'camera_error' ? 'text-amber-400' : 'text-[#cbd5e1]'
             }`}
           >
             <span
               className={`size-1.5 rounded-full ${
-                phase === 'stabilizing'
-                  ? 'bg-[#00bfa5]'
-                  : phase === 'permission_denied' || phase === 'camera_error'
-                    ? 'bg-amber-400'
-                    : 'bg-[#00bfa5]'
+                phase === 'permission_denied' || phase === 'camera_error' ? 'bg-amber-400' : 'bg-[#00bfa5]'
               }`}
             />
             {STATUS_LABELS[phase]}
           </span>
-          {(phase === 'searching_for_package' || phase === 'searching_back') &&
-            (lastCategory === 'person' || lastCategory === 'non_food_object') && (
-              <span className="flex items-center gap-1 rounded bg-black/55 px-2 py-1 text-[10px] font-semibold text-[#cbd5e1] backdrop-blur-sm">
-                <VideoOff size={11} aria-hidden="true" />
-                Capture blocked — not a food package
-              </span>
-            )}
         </div>
 
         {cameraError && (phase === 'camera_error' || phase === 'permission_denied') && (
@@ -715,13 +498,23 @@ export function CameraScanner({
         )}
       </div>
 
-      <div
-        className="sr-only"
-        role="status"
-        aria-live="polite"
-        aria-atomic="true"
-      >
-        {STATUS_LABELS[phase]}. {guidance.title} {guidance.subtitle}
+      <div className="mt-4 flex flex-col items-center gap-3">
+        <Button
+          variant="primary"
+          size="lg"
+          onClick={() => captureSide(scanSideRef.current)}
+          disabled={captureDisabled}
+          className="w-full sm:w-auto"
+        >
+          <Camera size={17} aria-hidden="true" />
+          {captureLabel}
+        </Button>
+        {phase === 'turn_package' && (
+          <span className="flex items-center gap-1.5 text-xs font-semibold text-[#00bfa5]">
+            <Rotate3D size={14} aria-hidden="true" />
+            Rotate the package, then capture the back side
+          </span>
+        )}
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-3">
@@ -775,7 +568,6 @@ function SideCaptureSlot({
         {capture ? (
           <p className={`mt-0.5 text-[10px] ${qualityLabel === 'Poor' ? 'font-semibold text-amber-500' : 'text-[#64748b]'}`}>
             Image quality: {qualityLabel} ({capture.clientQuality.sharpness}/100)
-            {qualityLabel === 'Poor' && ' — continuing analysis'}
           </p>
         ) : (
           <p className="mt-0.5 text-[10px] text-[#94a3b8]">Not captured yet</p>
