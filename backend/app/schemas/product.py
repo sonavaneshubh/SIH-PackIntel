@@ -3,6 +3,8 @@ from pydantic import BaseModel, Field
 
 ProductFieldStatus = Literal["detected", "not_printed", "not_visible", "uncertain", "not_applicable"]
 ProductFieldSource = Literal["ocr", "vision", "merged", "user", "none"]
+ProductFieldStatus = Literal["detected", "not_printed", "not_visible", "uncertain"]
+ProductFieldSource = Literal["ocr", "vision", "merged", "user", "none", "gemini_vision"]
 
 # Core Legal Metrology compliance fields (16 primary fields)
 CORE_LEGAL_METROLOGY_FIELDS = (
@@ -76,6 +78,8 @@ class ProductField(BaseModel):
     confidence - 0-100, real confidence from the producing source
     source     - ocr | vision | user | none | merged
     normalized - optional standardized string representation
+    source     - ocr | vision | gemini_vision | user | none
+    evidence   - exact text or visual context from the source that justifies this extraction
     conflicts  - optional debugging metadata when OCR and vision disagree
     """
 
@@ -84,6 +88,7 @@ class ProductField(BaseModel):
     confidence: float = Field(default=0.0, ge=0.0, le=100.0)
     source: ProductFieldSource = "none"
     normalized: Optional[str] = None
+    evidence: Optional[str] = None
     conflicts: Optional[List[Dict[str, Any]]] = None
 
 
@@ -94,6 +99,7 @@ def field(
     source: str = "none",
     normalized: Optional[str] = None,
     conflicts: Optional[List[Dict[str, Any]]] = None,
+    evidence: Optional[str] = None,
 ) -> ProductField:
     return ProductField(
         value=value,
@@ -102,6 +108,7 @@ def field(
         source=source,  # type: ignore[arg-type]
         normalized=normalized,
         conflicts=conflicts,
+        evidence=evidence,
     )
 
 

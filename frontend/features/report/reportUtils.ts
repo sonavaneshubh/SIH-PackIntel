@@ -168,6 +168,17 @@ export function formatExtractionSource(meta: { extraction_source?: string }) {
   if (source === 'ocr+vision') return 'OCR + Vision';
   if (source === 'vision') return 'Google Cloud Vision / Gemini';
   return 'OCR Engine';
+  if (source === 'gemini_vision') return 'Gemini Vision';
+  if (source === 'vision') return 'Vision';
+  return 'OCR';
+}
+
+export function sourceLabel(source: string) {
+  if (source === 'gemini_vision') return 'Gemini Vision';
+  if (source === 'vision') return 'Vision';
+  if (source === 'merged') return 'Merged';
+  if (source === 'user') return 'Manual';
+  return 'OCR';
 }
 
 export interface PopulatedField {

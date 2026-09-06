@@ -1,14 +1,14 @@
 import io
 import os
+import glob
 import base64
 import logging
 import shutil
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import urllib.request
 from PIL import Image, ImageEnhance, ImageFilter, ImageStat
 from app.core.config import settings
 from app.services.layout_ocr import extract_layout_ocr
-from app.services.ocr_space_service import OCRSpaceService
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +17,14 @@ try:
     HAS_PYTESSERACT = True
 except ImportError:
     HAS_PYTESSERACT = False
+
+try:
+    from google.cloud import vision
+    HAS_GOOGLE_VISION = True
+except ImportError:
+    HAS_GOOGLE_VISION = False
+
+_VISION_TIMEOUT_SECONDS = max(1, int(getattr(settings, "OCR_TIMEOUT_SECONDS", 60)))
 
 _PSMOS = (3, 6, 11)
 
@@ -93,6 +101,33 @@ def get_tesseract_diagnostics() -> Dict[str, Any]:
         "message": "Tesseract OCR is available",
         "version": version,
     }
+
+
+def get_google_vision_diagnostics() -> Dict[str, Any]:
+    """Return a safe status describing the Google Cloud Vision client."""
+    if not HAS_GOOGLE_VISION:
+        return {
+            "available": False,
+            "reason": "google_cloud_vision_missing",
+            "message": "google-cloud-vision is not installed",
+        }
+    credentials = OCRService._google_vision_credentials()
+    try:
+        if credentials is not None:
+            vision.ImageAnnotatorClient(credentials=credentials)
+        else:
+            vision.ImageAnnotatorClient()
+        return {
+            "available": True,
+            "reason": "ok",
+            "message": "Google Cloud Vision is available",
+        }
+    except Exception as exc:
+        return {
+            "available": False,
+            "reason": "credentials_unavailable",
+            "message": f"Google Cloud Vision cannot be initialized: {exc}",
+        }
 
 
 class OCRService:
@@ -228,6 +263,158 @@ class OCRService:
         return round(sum(confidences) / len(confidences), 2)
 
     @staticmethod
+    def _google_vision_credentials() -> Any:
+        """Resolve Google Cloud Vision credentials.
+
+        Resolution order:
+        1. ``GOOGLE_APPLICATION_CREDENTIALS`` (standard ADC service-account key).
+        2. A gitignored service-account key placed in the backend directory
+           (e.g. ``backend/packintel-*.json``).
+        Returns ``None`` when only ambient Application Default Credentials should
+        be used (gcloud / Compute Engine / metadata server).
+        """
+        sa_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+        if sa_path and os.path.isfile(sa_path):
+            try:
+                from google.oauth2 import service_account
+                return service_account.Credentials.from_service_account_file(sa_path)
+            except Exception as err:
+                logger.warning("OCR: Failed to load GOOGLE_APPLICATION_CREDENTIALS: %s", err)
+
+        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        for candidate in sorted(glob.glob(os.path.join(backend_dir, "packintel-*.json"))):
+            try:
+                from google.oauth2 import service_account
+                return service_account.Credentials.from_service_account_file(candidate)
+            except Exception as err:
+                logger.warning("OCR: Failed to load service account key %s: %s", candidate, err)
+        return None
+
+    @staticmethod
+    def _vision_client() -> Optional["vision.ImageAnnotatorClient"]:
+        """Return a Google Cloud Vision client using the configured credentials."""
+        if not HAS_GOOGLE_VISION:
+            return None
+        credentials = OCRService._google_vision_credentials()
+        try:
+            if credentials is not None:
+                return vision.ImageAnnotatorClient(credentials=credentials)
+            return vision.ImageAnnotatorClient()
+        except Exception as err:
+            logger.warning("OCR: Could not initialize Google Vision client: %s", err)
+            return None
+
+    @classmethod
+    def _run_google_vision(cls, image: Image.Image) -> tuple[str, float]:
+        """Run Google Cloud Vision OCR and return ``(text, confidence)``.
+
+        Raises on failure so the caller can fall back to Tesseract.
+        """
+        if not HAS_GOOGLE_VISION:
+            raise RuntimeError("google-cloud-vision is not installed")
+        client = cls._vision_client()
+        if client is None:
+            raise RuntimeError("Google Cloud Vision client could not be initialized")
+
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        content = buffer.getvalue()
+
+        vision_image = vision.Image(content=content)
+        features = [vision.Feature(type_=vision.Feature.Type.DOCUMENT_TEXT_DETECTION)]
+        try:
+            try:
+                response = client.annotate_image(
+                    {"image": vision_image, "features": features},
+                    timeout=_VISION_TIMEOUT_SECONDS,
+                )
+            except Exception:
+                # Some product labels work better with the generic text detector.
+                response = client.annotate_image(
+                    {
+                        "image": vision_image,
+                        "features": [
+                            vision.Feature(type_=vision.Feature.Type.TEXT_DETECTION)
+                        ],
+                    },
+                    timeout=_VISION_TIMEOUT_SECONDS,
+                )
+        except Exception as exc:
+            raise RuntimeError(f"Google Cloud Vision request failed: {exc}") from exc
+
+        if response.error and response.error.message:
+            raise RuntimeError(f"Google Cloud Vision error: {response.error.message}")
+
+        annotation = getattr(response, "full_text_annotation", None)
+        text = (annotation.text or "").strip() if annotation else ""
+
+        confidences = []
+        for page in (annotation.pages or []):
+            for block in page.blocks:
+                for paragraph in block.paragraphs:
+                    for word in paragraph.words:
+                        if word.confidence and word.confidence > 0:
+                            confidences.append(word.confidence)
+        if not confidences:
+            confidence = 100.0 if text else 0.0
+        else:
+            confidence = round(
+                (sum(confidences) / len(confidences)) * 100.0, 2
+            )
+        return text, confidence
+
+    @classmethod
+    def _run_tesseract(cls, pil_img: Image.Image) -> tuple[str, float, List[Dict[str, Any]]]:
+        """Run Tesseract over enhanced OCR variants and return ``(text, confidence, regions)``."""
+        diagnostics = get_tesseract_diagnostics()
+        if not diagnostics["available"]:
+            raise RuntimeError(diagnostics["message"])
+
+        tesseract_command = _resolve_tesseract_command()
+        if not tesseract_command:
+            raise RuntimeError("Tesseract OCR is unavailable.")
+
+        pytesseract.pytesseract.tesseract_cmd = tesseract_command
+        try:
+            variants = cls._preprocess_image(pil_img)
+        except (OSError, ValueError) as err:
+            raise RuntimeError(f"Image could not be prepared for OCR: {err}") from err
+
+        candidates = []
+        ocr_warning = None
+        for variant in variants:
+            for psm in _PSMOS:
+                try:
+                    text = cls._run_tesseract_string(variant, psm).strip()
+                    if cls._meaningful_text(text):
+                        candidates.append((text, variant, psm))
+                except (pytesseract.TesseractError, OSError) as err:
+                    ocr_warning = str(err)
+
+        if not candidates:
+            raise RuntimeError(ocr_warning or "Tesseract returned no readable text.")
+
+        candidates.sort(key=lambda c: cls._score_candidate(c[0]), reverse=True)
+        ocr_text, best_variant, best_psm = candidates[0]
+
+        best_data = None
+        try:
+            best_data = cls._run_tesseract_data(best_variant, best_psm)
+        except (pytesseract.TesseractError, OSError) as err:
+            logger.warning("OCR data layer failed: %s", err)
+
+        width, height = pil_img.size
+        if best_data:
+            confidence = cls._compute_confidence(best_data)
+            regions = cls._extract_regions(best_data, width, height)
+        else:
+            confidence = 0.0
+            regions = []
+        return ocr_text, confidence, regions
+
+    @staticmethod
     def _extract_regions(
         data: Dict[str, Any], width: int, height: int
     ) -> List[Dict[str, Any]]:
@@ -261,9 +448,12 @@ class OCRService:
     @classmethod
     def process_image(cls, image_url: str) -> Dict[str, Any]:
         """
-        OCR text extraction from product label images with real confidence and
-        word-level regions. Runs multiple page-segmentation modes over enhanced
-        variants and keeps the most meaningful result.
+        OCR text extraction from product label images.
+
+        Primary engine: Google Cloud Vision (document/text detection).
+        Fallback engine: Tesseract (locally, with light preprocessing).
+        The scan pipeline never crashes on OCR failure: both engines failing
+        returns a structured ``poor_quality`` result.
         """
         if not image_url:
             raise ValueError("Image URL is required for OCR scanning.")
@@ -274,90 +464,62 @@ class OCRService:
             raise ValueError(f"Could not load image from input: {err}") from err
 
         quality = cls._analyze_image_quality(pil_img)
-        diagnostics = get_tesseract_diagnostics()
-        if not diagnostics["available"]:
-            return {
-                "status": "completed_with_warning",
-                "raw_text": "",
-                "text": "",
-                "confidence": 0.0,
-                "engine": "tesseract",
-                "lines": [],
-                "regions": [],
-                "image_quality": "unusable",
-                "quality_reason": diagnostics["message"],
-                "quality": quality,
-            }
 
-        tesseract_command = _resolve_tesseract_command()
-        if not tesseract_command:
-            return {
-                "status": "completed_with_warning",
-                "raw_text": "",
-                "text": "",
-                "confidence": 0.0,
-                "engine": "tesseract",
-                "lines": [],
-                "regions": [],
-                "image_quality": "unusable",
-                "quality_reason": "Tesseract OCR is unavailable.",
-                "quality": quality,
-            }
+        ocr_text = ""
+        confidence = 0.0
+        regions: List[Dict[str, Any]] = []
+        engine: Optional[str] = None
 
-        pytesseract.pytesseract.tesseract_cmd = tesseract_command
+        # ---- Primary OCR: Google Cloud Vision -------------------------------
         try:
-            variants = cls._preprocess_image(pil_img)
-        except (OSError, ValueError) as err:
-            quality["quality"] = "poor"
-            quality["reason"] = f"Image could not be prepared for OCR: {err}"
+            ocr_text, confidence = cls._run_google_vision(pil_img)
+            engine = "google_vision"
+            logger.info("OCR: Google Vision")
+        except Exception as err:
+            logger.warning(
+                "OCR: Vision failed, using Tesseract (%s: %s)",
+                type(err).__name__, err,
+            )
+
+        # ---- Fallback OCR: Tesseract ----------------------------------------
+        if not cls._meaningful_text(ocr_text):
+            if ocr_text:
+                logger.info("OCR: Poor quality - Google Vision returned little text")
+            try:
+                ocr_text, confidence, regions = cls._run_tesseract(pil_img)
+                engine = "tesseract"
+                logger.info("OCR: Tesseract fallback succeeded")
+            except Exception as err:
+                logger.warning(
+                    "OCR: Tesseract failed (%s: %s)", type(err).__name__, err,
+                )
+
+        # ---- Both engines failed --------------------------------------------
+        if not cls._meaningful_text(ocr_text):
+            ocr_text = ""
+            confidence = 0.0
+            regions = []
+            logger.info("OCR: Poor quality")
+            quality["reason"] = (
+                "No readable package-label information was detected by either OCR engine."
+            )
             return {
-                "status": "completed_with_warning",
-                "raw_text": "",
+                "status": "poor_quality",
                 "text": "",
+                "ocr_status": "poor_quality",
+                "ocr_score": 0,
+                "raw_text": "",
                 "confidence": 0.0,
-                "engine": "tesseract",
+                "engine": engine or "unknown",
                 "lines": [],
                 "regions": [],
+                "layout_regions": [],
+                "layout_text": "",
+                "layout_region_count": 0,
                 "image_quality": "unusable",
                 "quality_reason": quality["reason"],
                 "quality": quality,
             }
-
-        candidates = []
-        ocr_warning = None
-        for variant in variants:
-            for psm in _PSMOS:
-                try:
-                    text = cls._run_tesseract_string(variant, psm).strip()
-                    if cls._meaningful_text(text):
-                        candidates.append((text, variant, psm))
-                except (pytesseract.TesseractError, OSError) as err:
-                    ocr_warning = str(err)
-
-        if not candidates:
-            ocr_text = ""
-            best_data = None
-        else:
-            candidates.sort(key=lambda c: cls._score_candidate(c[0]), reverse=True)
-            ocr_text, best_variant, best_psm = candidates[0]
-            try:
-                best_data = cls._run_tesseract_data(best_variant, best_psm)
-            except (pytesseract.TesseractError, OSError) as err:
-                logger.warning("OCR data layer failed: %s", err)
-                best_data = None
-
-        if not ocr_text and ocr_warning:
-            quality["reason"] = f"OCR warning: {ocr_warning}"
-        elif not ocr_text and not quality["reason"]:
-            quality["reason"] = "No readable package-label information was detected."
-
-        if ocr_text and best_data:
-            width, height = pil_img.size
-            confidence = cls._compute_confidence(best_data)
-            regions = cls._extract_regions(best_data, width, height)
-        else:
-            confidence = 0.0
-            regions = []
 
         lines = [line.strip() for line in ocr_text.splitlines() if line.strip()]
         try:
@@ -371,7 +533,7 @@ class OCRService:
             "text": ocr_text,
             "raw_text": ocr_text,
             "confidence": confidence,
-            "engine": "tesseract",
+            "engine": engine or "unknown",
             "lines": lines,
             "regions": regions,
             "layout_regions": layout_result["regions"],
@@ -386,11 +548,10 @@ class OCRService:
 def get_ocr_service():
     """Create the OCR engine used by the production scan pipeline.
 
-    OCR.Space is the ONLY OCR engine: every image submitted to /api/scan goes
-    through :class:`OCRSpaceService`. A missing/invalid ``OCR_SPACE_API_KEY``
-    is surfaced by ``process_image`` as a structured OCR failure (never a
-    silent Tesseract fallback). The local :class:`OCRService` (Tesseract)
-    remains in the codebase for diagnostics and offline unit testing only.
+    Google Cloud Vision is the primary OCR engine; Tesseract is the local
+    fallback. The returned :class:`OCRService` exposes the same
+    ``process_image`` interface the scan endpoint expects, so extraction,
+    compliance and report generation remain unchanged.
     """
-    logger.info("OCR engine selected: OCR.Space (only engine)")
-    return OCRSpaceService()
+    logger.info("OCR engine selected: Google Cloud Vision -> Tesseract fallback")
+    return OCRService()

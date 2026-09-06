@@ -13,6 +13,7 @@ from app.services.normalization import (
     normalize_phone,
     normalize_quantity,
 )
+from app.services.text_normalizer import normalize_text
 
 _DECL_FIELDS = (
     "manufacturer_name",
@@ -57,6 +58,20 @@ _STOP_LINE = re.compile(
     re.IGNORECASE,
 )
 
+# A line that reads like a postage address (street number/name, PIN, area
+# marker). When it follows an entity-name line it terminates that field, so a
+# name never absorbs the following address block.
+_ADDRESS_STOP_LINE = re.compile(
+    r"^\s*(?:"
+    r"\d{1,4}\s+(?:[A-Za-z]+\.?\s+)+"  # 12 MG Road ...
+    r"|(?:village|town|city|dist\.?|district|taluk(?:a)?|tehsil|colony|layout|"
+    r"nagar|road|street|st\b|lane|phase|sector|block|plot|gali|post|po\b|"
+    r"gpo|pin|tal|behind|opp\.?)\b"
+    r"|\w+(?:\s*[.,;]?)\s+\w+\s*[-–]\s*\d{5,6}"  # Bhuj, Gujarat-370220 / Anand, Gujarat-388001
+    r"|\d{6})",
+    re.IGNORECASE,
+)
+
 # Inline labels (value follows on the same line or the next lines).
 _MFG_INLINE = re.compile(
     r"(?:manufactur(?:er|ed|ing)?\s*(?:by|:|at)|mfg\.?\s*by|manufactured\s+at)\s*[:.]?",
@@ -79,7 +94,7 @@ _CARE_LEAD = re.compile(
     re.IGNORECASE,
 )
 _NAME_LEAD = re.compile(
-    r"(?:product\s*(?:name)?\s*[:.]?|commodity(?:y|\s*name)?\s*[:.]?|generic\s*(?:designation|name)?\s*[:.]?)",
+    r"(?:product\b\s*(?:name)?\s*[:.]?|commodity(?:y|\s*name)?\s*[:.]?|generic\s*(?:designation|name)?\s*[:.]?)",
     re.IGNORECASE,
 )
 _BRAND_LEAD = re.compile(r"brand\s*(?:name)?\s*[:.]?", re.IGNORECASE)
@@ -222,7 +237,7 @@ def _grab_value(text: str, label: re.Pattern, max_lines: int = 3, max_chars: int
             line = re.sub(r"[ \t]+", " ", line.strip())
             if not chunks and not line:
                 continue
-            if chunks and (not line or _STOP_LINE.match(line)):
+            if chunks and (not line or _STOP_LINE.match(line) or _ADDRESS_STOP_LINE.match(line)):
                 break
             chunks.append(line)
             if len(" ".join(chunks)) >= max_chars:
@@ -446,6 +461,22 @@ class AIService:
         fields, conf = cls.extract_with_confidence(raw_text, ocr_confidence=ocr_confidence)
         pi = build_product_information(fields, conf, raw_text)
         return pi, conf
+        """Extract the canonical ProductInformation schema from OCR text.
+
+        Every field carries value/status/confidence/source. Fields the OCR
+        pipeline cannot read are marked 'not_visible' — never 'not_printed',
+        because a text pass cannot prove absence from the artwork.
+
+        The raw OCR text is normalized first (see text_normalizer) so that
+        declaration labels (MRP, NET WT, MFD/EXP, FSSAI, currency) survive
+        OCR fragmentation/spacing errors, while brand/product names are left
+        untouched, then passed through the dedicated extraction layer.
+        """
+        normalized = normalize_text(raw_text)
+        fields, conf = cls.extract_with_confidence(
+            normalized, ocr_confidence=ocr_confidence
+        )
+        return build_product_information(fields, conf, normalized), conf
 
 
 def build_product_information(
