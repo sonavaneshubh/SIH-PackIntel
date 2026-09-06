@@ -208,13 +208,22 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
     ]
     has_information = bool(detected) and (not unusable_quality or vision_used)
 
+    logger.info("Compliance analysis started")
+    compliance = ComplianceService.evaluate_compliance(
+        inspection_id=inspection_id,
+        product_information=product_information,
+        is_imported=bool(meta.is_imported),
+        image_quality=front_result.get("image_quality", "usable"),
+    )
+    logger.info("Compliance analysis completed: overall=%s, score=%d", compliance.overall_result, compliance.compliance_score)
+    overall_result = compliance.overall_result
+    score = compliance.compliance_score
+    compliance_score = compliance.compliance_score
+    risk_score = compliance.risk_score
+    compliance_results = compliance.results
+
     if not has_information:
         result_status = "insufficient_information"
-        overall_result = "review"
-        score = 0
-        compliance_score = 0
-        risk_score = 0
-        compliance_results: List[ComplianceResult] = []
         if ocr_failed:
             reason = quality_reason or "OCR could not read the label image."
             report = (
@@ -233,18 +242,6 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
             )
         message = f"Scan completed. {report}"
     else:
-        logger.info("Compliance analysis started")
-        compliance = ComplianceService.evaluate_compliance(
-            inspection_id=inspection_id,
-            product_information=product_information,
-            is_imported=bool(meta.is_imported),
-        )
-        logger.info("Compliance analysis completed")
-        overall_result = compliance.overall_result
-        score = compliance.compliance_score
-        compliance_score = compliance.compliance_score
-        risk_score = compliance.risk_score
-        compliance_results = compliance.results
         if compliance.overall_result == "pass":
             result_status = "success"
             report = quality_reason
