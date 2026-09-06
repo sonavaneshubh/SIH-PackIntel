@@ -5,7 +5,7 @@ Anything ambiguous is left untouched; the caller must never invent digits.
 """
 
 import re
-from typing import Any, Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 from app.schemas.product import PRODUCT_FIELDS, ProductField, ProductInformation, field
 

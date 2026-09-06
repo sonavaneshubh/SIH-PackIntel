@@ -17,7 +17,6 @@ surfaced as 'uncertain' with the raw OCR/vision values preserved for debugging.
 from typing import Any, Dict, List, Optional
 
 from app.schemas.product import (
-    CONFLICT_SENSITIVE_FIELDS,
     PRODUCT_FIELDS,
     ProductField,
     field as make_field,

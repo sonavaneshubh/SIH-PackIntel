@@ -99,7 +99,7 @@ CASES: List[BaseCase] = [
             "customer_care_phone": "1800-258-7410",
             "toll_free_number": "1800-258-7410",
             "country_of_origin": "India",
-            "vegetarian_mark": "Vegetarian mark",
+            "vegetarian_mark": "Present",
             "fssai_number": "10012034000123",
         },
     ),
@@ -136,7 +136,7 @@ CASES: List[BaseCase] = [
             "customer_care_phone": "1800-425-8890",
             "toll_free_number": "1800-425-8890",
             "country_of_origin": "India",
-            "vegetarian_mark": "Vegetarian mark",
+            "vegetarian_mark": "Present",
             "fssai_number": "10014002000234",
         },
     ),
@@ -172,7 +172,7 @@ CASES: List[BaseCase] = [
             "customer_care_phone": "1800-103-4555",
             "toll_free_number": "1800-103-4555",
             "country_of_origin": "India",
-            "vegetarian_mark": "Vegetarian mark",
+            "vegetarian_mark": "Present",
             "fssai_number": "10021004000345",
             "certifications": "iso",
         },
@@ -211,7 +211,7 @@ CASES: List[BaseCase] = [
             "toll_free_number": "1800-266-1901",
             "customer_care_email": "care@coolfizz.in",
             "country_of_origin": "India",
-            "vegetarian_mark": "Vegetarian mark",
+            "vegetarian_mark": "Present",
             "fssai_number": "10032005000456",
         },
     ),
@@ -247,7 +247,7 @@ CASES: List[BaseCase] = [
             "customer_care_phone": "1800-180-1010",
             "toll_free_number": "1800-180-1010",
             "country_of_origin": "India",
-            "vegetarian_mark": "Vegetarian mark",
+            "vegetarian_mark": "Present",
             "fssai_number": "10041006000567",
             "certifications": "agmark",
         },
@@ -284,7 +284,7 @@ CASES: List[BaseCase] = [
             "customer_care_phone": "1800-120-3030",
             "toll_free_number": "1800-120-3030",
             "country_of_origin": "India",
-            "non_vegetarian_mark": "Non-vegetarian mark",
+            "non_vegetarian_mark": "Present",
             "fssai_number": "10036007000678",
             "certifications": "fpo",
         },
@@ -320,7 +320,7 @@ CASES: List[BaseCase] = [
             "customer_care_phone": "1800-209-1155",
             "toll_free_number": "1800-209-1155",
             "country_of_origin": "India",
-            "vegetarian_mark": "Vegetarian mark",
+            "vegetarian_mark": "Present",
             "fssai_number": "10049008000789",
         },
     ),
@@ -355,7 +355,7 @@ CASES: List[BaseCase] = [
             "customer_care_phone": "1800-229-0800",
             "toll_free_number": "1800-229-0800",
             "country_of_origin": "India",
-            "vegetarian_mark": "Vegetarian mark",
+            "vegetarian_mark": "Present",
             "fssai_number": "10057303000901",
         },
     ),
@@ -390,7 +390,7 @@ CASES: List[BaseCase] = [
             "customer_care_phone": "1800-315-2526",
             "toll_free_number": "1800-315-2526",
             "country_of_origin": "India",
-            "vegetarian_mark": "Vegetarian mark",
+            "vegetarian_mark": "Present",
             "fssai_number": "10010222000112",
         },
     ),
@@ -425,7 +425,7 @@ CASES: List[BaseCase] = [
             "customer_care_phone": "1800-233-4114",
             "toll_free_number": "1800-233-4114",
             "country_of_origin": "India",
-            "vegetarian_mark": "Vegetarian mark",
+            "vegetarian_mark": "Present",
             "fssai_number": "10009876543210",
         },
         # Case 10 is rendered low-contrast to exercise the quality fallback path.
@@ -446,7 +446,7 @@ def _font(bold: bool, size: int) -> ImageFont.FreeTypeFont:
 
 
 def render_label(case_id: str, brand: str, lines: List[str], low_contrast: bool = False) -> Image.Image:
-    width, height = 1000, 140 + len(lines) * 46
+    width, height = 1000, 206 + len(lines) * 52 + 60
     img = Image.new("RGB", (width, height), (255, 255, 255))
     draw = ImageDraw.Draw(img)
     if low_contrast:
@@ -497,6 +497,12 @@ def evaluate_case(ocr_value: Optional[str], truth: str) -> Tuple[bool, str]:
 
 
 def main() -> int:
+    # This benchmark measures the extraction/compliance pipeline against
+    # synthetic labels. Keep it local and deterministic: force Tesseract so it
+    # never depends on network OCR (OCR.Space is exercised end-to-end by the
+    # scan endpoint and tests instead).
+    os.environ["OCR_ENGINE"] = "tesseract"
+
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     ocr_svc = get_ocr_service()
     vision_configured = bool(settings.VISION_API_KEY or settings.OPENAI_API_KEY)

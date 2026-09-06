@@ -49,9 +49,13 @@ CRITICAL_FIELDS = (
     # "manufacturer/packer information" is a group: at least one identity
     # declaration must be present (checked separately via _IDENTITY_FIELDS).
     "mrp",
-    "packing_date",
-    "manufacturing_date",
 )
+
+# Labels print EITHER a date of manufacturing OR a date of packing (both are
+# the same legal declaration), never necessarily both. Requiring each one as a
+# critical field would trigger the vision fallback on nearly every valid scan
+# and silently burn the provider quota, leaving the fallback itself unusable.
+_PACK_DATE_FIELDS = ("packing_date", "manufacturing_date")
 
 _IDENTITY_FIELDS = ("manufacturer_name", "packer_name", "marketer_name")
 
@@ -113,6 +117,7 @@ def should_use_vision_fallback(
     Condition A: OCR confidence < 50
     Condition B: OCR failed (no readable text)
     Condition C: one or more critical fields were not reliably extracted
+    (packing_date and manufacturing_date count as a single mandatory date group)
     """
     if ocr_failed:
         return True
@@ -139,6 +144,10 @@ def should_use_vision_fallback(
     for key in CRITICAL_FIELDS:
         if not detected(key):
             return True
+
+    # A manufacturing/packing date group is mandatory: at least one must exist.
+    if not any(detected(key) for key in _PACK_DATE_FIELDS):
+        return True
 
     # Identity is satisfied when any manufacturer/packer/marketer is detected.
     if not any(detected(key) for key in _IDENTITY_FIELDS):

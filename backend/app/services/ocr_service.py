@@ -3,11 +3,12 @@ import os
 import base64
 import logging
 import shutil
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 import urllib.request
 from PIL import Image, ImageEnhance, ImageFilter, ImageStat
 from app.core.config import settings
 from app.services.layout_ocr import extract_layout_ocr
+from app.services.ocr_space_service import OCRSpaceService, ocr_space_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -382,6 +383,29 @@ class OCRService:
         }
 
 
-def get_ocr_service() -> OCRService:
-    """Factory function to get configured OCR service."""
+def get_ocr_service():
+    """Factory function to get the configured OCR service.
+
+    OCR engine selection:
+    - ``OCR_ENGINE=tesseract`` -> local Tesseract (hermetic tests / no key).
+    - ``OCR_ENGINE=ocr_space`` -> OCR.Space (fails gracefully if unconfigured).
+    - Unset (default) -> OCR.Space when ``OCR_SPACE_API_KEY`` is configured,
+      otherwise local Tesseract.
+    """
+    engine = os.getenv("OCR_ENGINE", "").strip().lower()
+
+    if engine == "tesseract":
+        return OCRService()
+
+    if engine == "ocr_space":
+        if not ocr_space_enabled():
+            logger.error("OCR_ENGINE=ocr_space but OCR_SPACE_API_KEY is not configured.")
+        logger.info("OCR engine selected: OCR.Space")
+        return OCRSpaceService()
+
+    if ocr_space_enabled():
+        logger.info("OCR engine selected: OCR.Space (OCR_SPACE_API_KEY configured)")
+        return OCRSpaceService()
+
+    logger.info("OCR engine selected: Tesseract (OCR_SPACE_API_KEY not configured)")
     return OCRService()

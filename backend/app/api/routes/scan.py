@@ -1,6 +1,6 @@
 import logging
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -35,18 +35,40 @@ async def create_scan(request: ScanRequest, current_user: dict = Depends(get_cur
     if not image_url:
         raise HTTPException(status_code=400, detail="image_url is required for OCR scanning")
 
+    logger.info(
+        "Scan request received: image_url=%s, is_imported=%s",
+        _safe_input_label(image_url),
+        bool(request.is_imported),
+    )
+
     try:
         ocr_result = get_ocr_service().process_image(image_url)
     except ValueError as exc:
+        logger.warning("Scan rejected (invalid image input): %s", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     ocr_text = ocr_result.get("raw_text", "") or ""
+    layout_text = ocr_result.get("layout_text", "") or ""
+    # ROI OCR reads each label region independently (psm 6) and often recovers
+    # small bottom lines (vegetarian mark, FSSAI, certifications) that degrade
+    # in a single full-image pass. Extraction consumes the union of both.
+    extraction_text = _combine_ocr_text(ocr_text, layout_text)
     ocr_confidence = float(ocr_result.get("confidence", 0.0) or 0.0)
     ocr_failed = not bool(ocr_text.strip())
 
+    logger.info(
+        "OCR completed: engine=%s, text_len=%d, confidence=%s, quality=%s, failed=%s",
+        ocr_result.get("engine", "unknown"),
+        len(ocr_text),
+        ocr_confidence,
+        ocr_result.get("image_quality", "unknown"),
+        ocr_failed,
+    )
+
     # Canonical OCR extraction (per-field value/status/confidence/source).
+    logger.info("Analysis started (field extraction)")
     ocr_info, extraction_conf = AIService.extract_product_information(
-        ocr_text, ocr_confidence=ocr_confidence
+        extraction_text, ocr_confidence=ocr_confidence
     )
 
     vision_used = False
@@ -88,19 +110,31 @@ async def create_scan(request: ScanRequest, current_user: dict = Depends(get_cur
         compliance_score = 0
         risk_score = 0
         compliance_results: List[ComplianceResult] = []
-        report = (
-            f"{quality_reason.rstrip('.')}. No readable package-label information was detected. "
-            "Upload a clearer image."
-            if quality_reason
-            else "No readable package-label information was detected. Upload a clearer image."
-        )
+        if ocr_failed:
+            reason = quality_reason or "OCR could not read the label image."
+            report = (
+                "OCR status: failed. Extracted information: unavailable. "
+                "Compliance score: 0 / unable to verify. "
+                f"Reason: {reason.rstrip('.')}. "
+                "No readable package-label information was detected. "
+                "Upload a clearer image."
+            )
+        else:
+            report = (
+                f"{quality_reason.rstrip('.')}. No readable package-label information was detected. "
+                "Upload a clearer image."
+                if quality_reason
+                else "No readable package-label information was detected. Upload a clearer image."
+            )
         message = f"Scan completed. {report}"
     else:
+        logger.info("Compliance analysis started")
         compliance = ComplianceService.evaluate_compliance(
             inspection_id=inspection_id,
             product_information=product_information,
             is_imported=bool(request.is_imported),
         )
+        logger.info("Compliance analysis completed")
         overall_result = compliance.overall_result
         score = compliance.compliance_score
         compliance_score = compliance.compliance_score
@@ -117,6 +151,15 @@ async def create_scan(request: ScanRequest, current_user: dict = Depends(get_cur
                 or "Some package information could not be verified from the image."
             )
             message = f"Scan completed with partial information. {report}"
+
+    logger.info(
+        "Scan completed: id=%s, status=%s, score=%s, overall=%s, engine=%s",
+        inspection_id,
+        result_status,
+        score,
+        overall_result,
+        ocr_result.get("engine", "unknown"),
+    )
 
     return ScanResponse(
         status=result_status,
@@ -146,6 +189,41 @@ async def create_scan(request: ScanRequest, current_user: dict = Depends(get_cur
         quality_reason=quality_reason,
         report=report,
     )
+
+
+def _safe_input_label(image_url: str) -> str:
+    """Redact signed-URL tokens and expose only the input scheme for logging."""
+    try:
+        if image_url.startswith("data:image"):
+            return "data-uri"
+        if "http://" in image_url or "https://" in image_url:
+            from urllib.parse import urlparse
+
+            host = urlparse(image_url).netloc or "url"
+            return f"https://{host}"
+    except Exception:
+        pass
+    return "local-path"
+
+
+def _combine_ocr_text(full_ocr: str, layout_ocr: str) -> str:
+    """Merge ROI OCR lines into the full-image OCR text.
+
+    Full-image OCR keeps its reading order (the title line stays first). Lines
+    the single-pass pass missed or garbled are appended once; duplicates are
+    dropped so the extraction regexes never see the same declaration twice.
+    """
+    seen = set()
+    merged: List[str] = []
+    for line in (*((full_ocr or "").splitlines()), *((layout_ocr or "").splitlines())):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        key = stripped.casefold()
+        if key not in seen:
+            seen.add(key)
+            merged.append(stripped)
+    return "\n".join(merged)
 
 
 def _flat_extraction(product_information: Dict[str, ProductField]) -> Dict[str, Optional[str]]:

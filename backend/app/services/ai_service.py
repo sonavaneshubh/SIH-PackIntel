@@ -1,10 +1,9 @@
 import re
 from typing import Any, Dict, Optional, Tuple
 
-from app.schemas.product import PRODUCT_FIELDS, ProductInformation, field
+from app.schemas.product import ProductInformation, field
 from app.services.normalization import (
     normalize_email,
-    normalize_fssai,
     normalize_phone,
     normalize_quantity,
 )
@@ -118,7 +117,7 @@ _DECL_NOTES = re.compile(
 )
 
 _TITLE_NOISE = re.compile(
-    r"(?:mrp|rs\.?|net\s*(?:qty|quantity|wt)|manufactur|pack(?:ed|er)?\s*by|import(?:ed)?\s*by"
+    r"(?:mrp|rs\.?\s*\d|net\s*(?:qty|quantity|wt)|manufactur|pack(?:ed|er)?\s*by|import(?:ed)?\s*by"
     r"|consumer|customer|country|made\s*in|fssai|tel|phone|www|@|e%\s*&|max\s*retail"
     r"|fitness|consumption|registration|design|without\s+affecting|license|licence|printed"
     r"|marketed|distributed|vegetarian|non-?vegetarian|batch|lot)",
@@ -136,8 +135,21 @@ _VEG_MARK = re.compile(
 )
 _NONVEG_MARK = re.compile(r"non-?veg(?:etarian)?\s*(?:mark|symbol)?", re.IGNORECASE)
 _FSSAI_LINE = re.compile(
-    r"fssai\s*(?:lic(?:ence)?\.?\s*no\.?)?"
-    r"\s*[:.]?\s*([ \d]{10,18})",
+    r"fssai\s*(?:lic(?:ence)?\.?\s*(?:no\.?)?)?\s*[:.]?\s*"
+    r"([A-Za-z0-9][A-Za-z0-9./\-]*(?:\s+\d[A-Za-z0-9./\-]*)?)",
+    re.IGNORECASE,
+)
+
+# Country of origin is almost always a short alpha phrase on one line. OCR
+# frequently garbles the vegetarian/non-vegetarian mark that follows it (e.g.
+# "Ve ek"), and that noise must never bleed into the extracted country value.
+_COUNTRY_PREFIX = re.compile(
+    r"^(?:made\s+in|product\s+of|imported\s+(?:from|by)|packed\s+in|manufactured\s+in)\s+",
+    re.IGNORECASE,
+)
+_COUNTRY_STOP = re.compile(
+    r"\s+(?=ve\b|vy\b|wy\b|oe\b|mark\b|symbol\b|veg(?:etarian)?\b|non-?veg(?:etarian)?\b|"
+    r"fssai\b|lic(?:ence)?\b|batch\b|lot\b|mfg\b|mfd\b|packed\b|best\b|use\s+by\b)",
     re.IGNORECASE,
 )
 _CERTS = {
@@ -201,6 +213,42 @@ def _grab_value(text: str, label: re.Pattern, max_lines: int = 3, max_chars: int
         if value:
             return value
     return None
+
+
+def _country_from_origin(value: Optional[str]) -> Optional[str]:
+    """Return a clean country name from an origin line, ignoring OCR noise.
+
+    Only the first line is considered and any trailing OCR garbage (typically
+    a garbled vegetarian/non-vegetarian mark on the following/garbled line) is
+    cut off. Non-alpha or overly long residues are rejected outright."""
+    if not value:
+        return None
+    first = value.splitlines()[0].strip(" \t.,;:-")
+    if not first:
+        return None
+    first = re.sub(r"[.,;:]+$", "", first)
+    first = _COUNTRY_PREFIX.sub("", first).strip()
+    first = _COUNTRY_STOP.split(first, maxsplit=1)[0].strip(" \t.,;:-")
+    if not first or len(first) > 40:
+        return None
+    words = first.split()
+    if not words or len(words) > 6 or any(len(w) < 2 or not w.isalpha() for w in words):
+        return None
+    return " ".join(words)
+
+
+def _extract_fssai(value: Optional[str]) -> Optional[str]:
+    """Return the 14-digit FSSAI licence number from a noisy OCR token run.
+
+    Tesseract commonly renders 0 as O inside FSSAI numbers; the substitution
+    is only accepted when the result is exactly 14 digits, so it can never
+    pad or invent digits."""
+    candidate = (value or "").strip()
+    digits = re.sub(r"[^\d]", "", candidate)
+    if len(digits) == 14:
+        return digits
+    digits_o = re.sub(r"[^\d]", "", re.sub(r"[Oo]", "0", candidate))
+    return digits_o if len(digits_o) == 14 else None
 
 
 class AIService:
@@ -306,11 +354,10 @@ class AIService:
         ):
             _set("common_generic_name", title, 60.0)
 
-        raw_origin = _grab_value(text, _ORIGIN_LEAD, max_lines=1)
-        if raw_origin:
-            co = re.search(r"[A-Za-z][A-Za-z\s]{1,30}", raw_origin)
-            if co:
-                _set("country_of_origin", co.group(0).strip(), 78.0)
+        raw_origin = _grab_value(text, _ORIGIN_LEAD, max_lines=0)
+        co = _country_from_origin(raw_origin) if raw_origin else None
+        if co:
+            _set("country_of_origin", co, 78.0)
 
         notes = []
         seen = set()
@@ -416,7 +463,7 @@ def build_product_information(
     nonveg_mark = bool(_NONVEG_MARK.search(raw_text))
 
     fssai_match = _FSSAI_LINE.search(raw_text)
-    fssai_number = normalize_fssai(fssai_match.group(1)) if fssai_match else None
+    fssai_number = _extract_fssai(fssai_match.group(1)) if fssai_match else None
 
     certs = []
     for name, pattern in _CERTS.items():

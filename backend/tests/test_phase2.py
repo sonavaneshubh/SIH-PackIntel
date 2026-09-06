@@ -5,7 +5,6 @@ import json
 import pytest
 from PIL import Image
 
-from app.main import app
 from app.api.routes import scan as scan_route
 from app.schemas.product import ProductInformation, field as make_field
 from app.services.ai_service import AIService, build_product_information
@@ -24,7 +23,7 @@ from app.services.vision_service import (
     _parse_json,
     should_use_vision_fallback,
 )
-from tests.test_main import client, image_data_uri, scan
+from tests.test_main import scan
 
 
 # ---------------------------------------------------------------------------
@@ -65,6 +64,21 @@ def test_fallback_not_needed_when_only_optional_field_missing():
     partial.expiry_date = make_field(status="not_visible", source="none")
     partial.certifications = make_field(status="not_visible", source="none")
     assert should_use_vision_fallback(85.0, ocr_failed=False, product_information=partial) is False
+
+
+def test_fallback_not_needed_when_one_pack_date_present():
+    # Labels print either a manufacturing or a packing date, never both. A
+    # single detected date satisfies the mandatory date group.
+    partial = GOOD_PI.model_copy(deep=True)
+    partial.manufacturing_date = make_field(status="not_visible", source="none")
+    assert should_use_vision_fallback(85.0, ocr_failed=False, product_information=partial) is False
+
+
+def test_fallback_needed_when_no_pack_date_detected():
+    partial = GOOD_PI.model_copy(deep=True)
+    partial.packing_date = make_field(status="not_visible", source="none")
+    partial.manufacturing_date = make_field(status="not_visible", source="none")
+    assert should_use_vision_fallback(85.0, ocr_failed=False, product_information=partial) is True
 
 
 # ---------------------------------------------------------------------------
@@ -217,6 +231,65 @@ def test_label_aware_quantity_and_fssai_mapping():
     assert pi.net_quantity.value == "200 g"
     assert pi.quantity_unit.value == "g"
     assert pi.fssai_number.value == "10012034000123"
+
+
+def test_fssai_tolerates_ocr_zero_o_confusion():
+    pi, _ = AIService.extract_product_information(
+        "FSSAI Lic. No. 100210O4000345"
+    )
+    assert pi.fssai_number.value == "10021004000345"
+
+
+def test_fssai_not_polluted_by_following_declaration():
+    text = (
+        "FSSAI Lic. No. 10021004000345\n"
+        "Certified ISO 22000"
+    )
+    pi, _ = AIService.extract_product_information(text)
+    assert pi.fssai_number.value == "10021004000345"
+
+
+def test_fssai_wrong_length_not_detected():
+    pi, _ = AIService.extract_product_information("FSSAI Lic. No. 1234567890123")
+    assert pi.fssai_number.status == "not_visible"
+    assert pi.fssai_number.value is None
+
+
+def test_country_of_origin_ignores_garbled_veg_mark_line():
+    pi, _ = AIService.extract_product_information(
+        "Country of Origin: India\nVe ek\nNet Quantity: 5 kg"
+    )
+    assert pi.country_of_origin.value == "India"
+
+
+def test_country_of_origin_clean_when_noise_on_same_line():
+    pi, _ = AIService.extract_product_information(
+        "Made in India Vegetarian\nNet Quantity: 5 kg"
+    )
+    assert pi.country_of_origin.value == "India"
+
+
+def test_brand_title_not_rejected_by_rs_substring():
+    # "SARSON" contains the substring "rs"; it must not be dropped because the
+    # title-noise guard matches only real prices (Rs <digits>).
+    fields, _ = AIService.extract_with_confidence(
+        "Sarson Gold\nKachi Ghani Mustard Oil\nMRP Rs. 215"
+    )
+    assert fields["commodity_name"] == "Sarson Gold"
+
+
+def test_combine_ocr_text_merges_layout_lines_once():
+    from app.api.routes.scan import _combine_ocr_text
+
+    full = "PREMIUM BASMATI RICE\nMRP Rs. 1099\nNet Quantity 5 kg"
+    layout = "PREMIUM BASMATI RICE\nVegetarian Mark\nNet Quantity 5 kg"
+    combined = _combine_ocr_text(full, layout)
+    assert combined.splitlines() == [
+        "PREMIUM BASMATI RICE",
+        "MRP Rs. 1099",
+        "Net Quantity 5 kg",
+        "Vegetarian Mark",
+    ]
 
 
 # ---------------------------------------------------------------------------
