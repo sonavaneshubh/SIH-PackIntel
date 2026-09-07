@@ -14,6 +14,7 @@ import {
 } from '@/lib/supabase/inspectionService';
 import { Inspection, ExtractedLabelInsert, ComplianceResultInsert, InspectionImage } from '@/types/database';
 import { API_BASE_URL } from '@/lib/api';
+import { deriveInspectionMetadataFromExtraction } from '@/lib/extractionMetadata';
 
 export interface ScanPipelineState {
   step: 'idle' | 'creating' | 'uploading' | 'ocr' | 'extracting' | 'compliance' | 'completed' | 'error';
@@ -165,6 +166,10 @@ export function useScanPipeline() {
         typeof ocrData.product_information === 'string'
           ? JSON.parse(ocrData.product_information || '{}')
           : (ocrData.product_information || {});
+      const derivedMeta = deriveInspectionMetadataFromExtraction(
+        productInformation,
+        extractedDeclarations,
+      );
       const ocrConfidence = Number(ocrData.ocr_confidence) || 0;
       const extractionConfidence = Number(ocrData.extraction_confidence);
       const ocrRegions = Array.isArray(ocrData.ocr_regions) ? ocrData.ocr_regions : [];
@@ -300,6 +305,10 @@ export function useScanPipeline() {
         overall_result: overallResult,
         risk_score: riskScore,
         compliance_score: complianceScore,
+        product_name: derivedMeta.product_name,
+        brand_name: derivedMeta.brand_name,
+        manufacturer_name: derivedMeta.manufacturer_name,
+        product_category: derivedMeta.product_category,
         notes: ocrData.report || `Processed via scan pipeline. ${complianceResults.length} rules checked.`,
         inspected_at: new Date().toISOString(),
       });
@@ -311,6 +320,10 @@ export function useScanPipeline() {
           overall_result: overallResult,
           risk_score: riskScore,
           compliance_score: complianceScore,
+          product_name: derivedMeta.product_name,
+          brand_name: derivedMeta.brand_name,
+          manufacturer_name: derivedMeta.manufacturer_name,
+          product_category: derivedMeta.product_category,
         },
         progress: 100,
       });
@@ -329,6 +342,7 @@ export function useScanPipeline() {
       if (inspectionToUpdate?.id) {
         await updateInspection(inspectionToUpdate.id, {
           status: 'failed',
+          product_name: null,
           notes: `Pipeline failed: ${errorMessage}`,
         });
       }

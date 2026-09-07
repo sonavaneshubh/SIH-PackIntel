@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { useAuth } from '@/lib/authContext';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
+import { deleteAllMyInspections } from '@/lib/supabase/inspectionService';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -458,15 +459,14 @@ export default function SettingsPage() {
     setClearDataLoading(true);
     setClearDataMsg(null);
     try {
-      const { data: { user: sbUser } } = await supabase.auth.getUser();
-      if (!sbUser) throw new Error('Not authenticated.');
-      const { error } = await supabase
-        .from('inspections')
-        .delete()
-        .eq('inspector_id', sbUser.id);
-      if (error) throw error;
+      const result = await deleteAllMyInspections();
+      if (result.error) throw new Error(result.error);
+      const removed = result.data?.removedFiles ?? 0;
       setInspectionCount(0);
-      setClearDataMsg({ type: 'success', text: 'All scan data deleted successfully.' });
+      setClearDataMsg({
+        type: 'success',
+        text: `All scan data deleted successfully${removed ? ` (${removed} files removed)` : ''}.`,
+      });
       setClearDataConfirm('');
       setTimeout(() => {
         setClearDataModalOpen(false);
