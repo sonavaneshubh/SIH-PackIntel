@@ -10,6 +10,7 @@ interface MetricCardProps {
   icon: string;
   tone?: MetricTone;
   change?: number | null;
+  sparkData?: number[];
   className?: string;
 }
 
@@ -27,25 +28,50 @@ export function MetricCard({
   icon,
   tone = 'green',
   change,
+  sparkData,
   className,
 }: MetricCardProps) {
   const config = toneConfig[tone];
+  const [mounted, setMounted] = React.useState(false);
+  const [displayValue, setDisplayValue] = React.useState<string | number>(typeof value === 'number' ? 0 : value);
+
+  React.useEffect(() => {
+    setMounted(true);
+    // count-up animation for numeric values
+    if (typeof value === 'number') {
+      let start = 0;
+      const duration = 700;
+      const startTime = performance.now();
+      const step = (now: number) => {
+        const t = Math.min(1, (now - startTime) / duration);
+        const eased = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t; // easeInOutQuad
+        const current = Math.round(start + (value - start) * eased);
+        setDisplayValue(current);
+        if (t < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    }
+    return () => {};
+  }, [value]);
 
   return (
     <div
       className={cn(
-        'flex flex-col gap-3 rounded-2xl border border-[#E2E8F0] bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)]',
+        'flex flex-col gap-2 rounded-xl border border-[#E2E8F0] bg-white px-3 py-3 shadow-sm transform transition-all duration-200',
+        mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2',
+        'hover:shadow-md hover:-translate-y-0.5',
         className
       )}
+      style={{ willChange: 'transform, opacity' }}
     >
       <div className="flex items-start justify-between gap-3">
-        <span className="text-[13px] font-medium leading-snug text-[#64748B]">{title}</span>
-        <span className={cn('flex size-12 shrink-0 items-center justify-center rounded-xl', config.iconBg)}>
-          <span className={cn('material-symbols-outlined text-[24px]', config.iconColor)}>{icon}</span>
+        <span className="text-[12px] font-medium leading-snug text-[#64748B]">{title}</span>
+        <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', config.iconBg)}>
+          <span className={cn('material-symbols-outlined text-[16px]', config.iconColor)}>{icon}</span>
         </span>
       </div>
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <span className="text-[32px] font-bold leading-none tracking-tight text-[#1E293B]">{value}</span>
+        <span className="text-[20px] font-bold leading-none tracking-tight text-[#1E293B]">{displayValue}</span>
         {typeof change === 'number' && (
           <span
             className={cn(
@@ -61,6 +87,25 @@ export function MetricCard({
         )}
       </div>
       <p className="text-xs leading-relaxed text-[#94A3B8]">{description}</p>
+
+      {sparkData && sparkData.length > 1 && (
+        <div className="mt-2 h-5 w-full">
+          <svg viewBox="0 0 100 12" preserveAspectRatio="none" className="w-full h-5">
+            {(() => {
+              const max = Math.max(...sparkData);
+              const min = Math.min(...sparkData);
+              const range = Math.max(1, max - min);
+              const pts = sparkData.map((v, i) => {
+                const x = (i / (sparkData.length - 1)) * 100;
+                // scale 0-12 px
+                const y = 12 - ((v - min) / range) * 10 - 1;
+                return `${x},${y.toFixed(2)}`;
+              });
+              return <polyline points={pts.join(' ')} fill="none" stroke="#1A73E8" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="opacity-90" />;
+            })()}
+          </svg>
+        </div>
+      )}
     </div>
   );
 }

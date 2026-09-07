@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { supabase } from '@/lib/supabase/client';
 import { getSignedImageUrl, normalizeExtractedLabel } from '@/lib/supabase/inspectionService';
-import { api } from '@/lib/api';
 import {
   Inspection,
   ExtractedLabel,
@@ -27,6 +26,8 @@ import {
 import { ProductFieldValue, QualityItem, ResultPill, SectionHeading, SummaryItem } from './reportComponents';
 import { cn } from '@/lib/utils';
 
+type LoadState = 'loading' | 'not_found' | 'error' | 'ready';
+
 export function ReportView() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -38,50 +39,59 @@ export function ReportView() {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [backImage, setBackImage] = useState<InspectionImage | null>(null);
   const [backImageUrl, setBackImageUrl] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [loadState, setLoadState] = useState<LoadState>('loading');
   const [error, setError] = useState<string | null>(null);
   const [reportMessage, setReportMessage] = useState('');
 
-  useEffect(() => {
+  const loadReport = async () => {
+    setLoadState('loading');
+    setError(null);
     if (!inspectionId) {
-      setError('No inspection ID was provided.');
-      setIsLoading(false);
+      setLoadState('not_found');
       return;
     }
-    const loadReport = async () => {
-      try {
-        const { data, error: queryError } = await supabase
-          .from('inspections')
-          .select('*, extracted_labels (*), compliance_results (*), inspection_images (*)')
-          .eq('id', inspectionId)
-          .single();
-        if (queryError) throw queryError;
-        const rawLabel = Array.isArray(data.extracted_labels)
-          ? data.extracted_labels[0]
-          : data.extracted_labels;
-        setInspection(data);
-        setLabel(normalizeExtractedLabel(rawLabel));
-        setResults(data.compliance_results || []);
-        const images: InspectionImage[] = data.inspection_images || [];
-        const frontImage = images.find((img) => img.image_type === 'label_front') || images[0] || null;
-        const backImage = images.find((img) => img.image_type === 'label_back') || null;
-        setImage(frontImage);
-        setBackImage(backImage);
-        if (frontImage?.storage_path) {
-          const signed = await getSignedImageUrl(frontImage.storage_path);
-          setImageUrl(signed.url || frontImage.public_url || null);
-        }
-        if (backImage?.storage_path) {
-          const signedBack = await getSignedImageUrl(backImage.storage_path);
-          setBackImageUrl(signedBack.url || backImage.public_url || null);
-        }
-      } catch {
-        setError('We could not load this inspection.');
-      } finally {
-        setIsLoading(false);
+    try {
+      const { data, error: queryError } = await supabase
+        .from('inspections')
+        .select('*, extracted_labels (*), compliance_results (*), inspection_images (*)')
+        .eq('id', inspectionId)
+        .maybeSingle();
+      if (queryError) throw queryError;
+      if (!data) {
+        setLoadState('not_found');
+        return;
       }
-    };
+      const rawLabel = Array.isArray(data.extracted_labels)
+        ? data.extracted_labels[0]
+        : data.extracted_labels;
+      setInspection(data);
+      setLabel(normalizeExtractedLabel(rawLabel));
+      setResults(data.compliance_results || []);
+      const images: InspectionImage[] = data.inspection_images || [];
+      const frontImage = images.find((img) => img.image_type === 'label_front') || images[0] || null;
+      const backImage = images.find((img) => img.image_type === 'label_back') || null;
+      setImage(frontImage);
+      setBackImage(backImage);
+      setImageUrl(null);
+      setBackImageUrl(null);
+      if (frontImage?.storage_path) {
+        const signed = await getSignedImageUrl(frontImage.storage_path);
+        setImageUrl(signed.url || frontImage.public_url || null);
+      }
+      if (backImage?.storage_path) {
+        const signedBack = await getSignedImageUrl(backImage.storage_path);
+        setBackImageUrl(signedBack.url || backImage.public_url || null);
+      }
+      setLoadState('ready');
+    } catch {
+      setError('We could not load this inspection.');
+      setLoadState('error');
+    }
+  };
+
+  useEffect(() => {
     void loadReport();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inspectionId]);
 
   const enrichedResults = useMemo(
@@ -123,27 +133,36 @@ export function ReportView() {
 
   const otherInfo = productInformation?.other_detected_information || {};
 
-  const handlePdf = async () => {
-    setReportMessage('Preparing report...');
-    try {
-      const report = await api.generateReport({ inspection_id: inspectionId || '', format: 'pdf' });
-      if (report.download_url.startsWith('http')) {
-        window.open(report.download_url, '_blank', 'noopener,noreferrer');
-      } else {
-        window.print();
-        setReportMessage('Use “Save as PDF” in the print dialog to download this report.');
-      }
-    } catch {
+  const handlePdf = () => {
+    setReportMessage('Preparing PDF of the current report...');
+    window.setTimeout(() => {
       window.print();
-      setReportMessage('Report prepared for printing. Use “Save as PDF” to download it.');
-    }
+      setReportMessage('Choose “Save as PDF” as the printer in the dialog to download this report as a PDF.');
+    }, 50);
   };
 
-  if (isLoading) return <AppShell pageTitle="Inspection Report"><LoadingState /></AppShell>;
-  if (error || !inspection)
+  if (loadState === 'loading')
     return (
       <AppShell pageTitle="Inspection Report">
-        <ErrorState message={error || 'Inspection not found.'} onNewScan={() => router.push('/scan/new')} />
+        <LoadingState />
+      </AppShell>
+    );
+
+  if (loadState === 'not_found')
+    return (
+      <AppShell pageTitle="Inspection Report">
+        <NotFoundState onBack={() => router.push('/history')} />
+      </AppShell>
+    );
+
+  if (loadState === 'error' || !inspection)
+    return (
+      <AppShell pageTitle="Inspection Report">
+        <ErrorState
+          message={error || 'Inspection not found.'}
+          onRetry={() => void loadReport()}
+          onBack={() => router.push('/history')}
+        />
       </AppShell>
     );
 
@@ -171,6 +190,11 @@ export function ReportView() {
             </div>
           </div>
           <div className="report-actions flex flex-wrap gap-2">
+            <Link href="/history">
+              <Button variant="outline" icon="arrow_back">
+                Back to History
+              </Button>
+            </Link>
             <Button variant="secondary" icon="download" onClick={handlePdf}>
               Download PDF Report
             </Button>
@@ -414,10 +438,10 @@ export function ReportView() {
         <section className="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-[0.8fr_1.2fr]">
           <Card className="p-5">
             <SectionHeading title="Source Images" subtitle="Scanned package label artwork (front & back)." />
-            {imageUrl || backImageUrl ? (
-              <div className={cn('grid gap-3', backImageUrl ? 'grid-cols-1 sm:grid-cols-2' : '')}>
-                {imageUrl && (
-                  <figure>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <figure>
+                {imageUrl ? (
+                  <>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={imageUrl}
@@ -425,12 +449,23 @@ export function ReportView() {
                       className="max-h-72 w-full rounded-lg border border-outline-variant bg-surface-container-low object-contain"
                     />
                     <figcaption className="mt-1 text-center text-[11px] font-semibold text-on-surface-variant">
-                      Front Side
+                      Front
                     </figcaption>
-                  </figure>
+                  </>
+                ) : (
+                  <>
+                    <div className="grid h-40 place-items-center rounded-lg border border-dashed border-outline-variant bg-surface-container-low text-sm text-on-surface-variant">
+                      Front image unavailable
+                    </div>
+                    <figcaption className="mt-1 text-center text-[11px] font-semibold text-on-surface-variant">
+                      Front
+                    </figcaption>
+                  </>
                 )}
-                {backImageUrl && (
-                  <figure>
+              </figure>
+              <figure>
+                {backImageUrl ? (
+                  <>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={backImageUrl}
@@ -438,27 +473,32 @@ export function ReportView() {
                       className="max-h-72 w-full rounded-lg border border-outline-variant bg-surface-container-low object-contain"
                     />
                     <figcaption className="mt-1 text-center text-[11px] font-semibold text-on-surface-variant">
-                      Back Side
+                      Back
                     </figcaption>
-                  </figure>
+                  </>
+                ) : (
+                  <>
+                    <div className="grid h-40 place-items-center rounded-lg border border-dashed border-outline-variant bg-surface-container-low text-center text-sm text-on-surface-variant">
+                      Back data not available
+                    </div>
+                    <figcaption className="mt-1 text-center text-[11px] font-semibold text-on-surface-variant">
+                      Back
+                    </figcaption>
+                  </>
                 )}
-              </div>
-            ) : (
-              <div className="grid h-48 place-items-center rounded-lg bg-surface-container-low text-sm text-on-surface-variant">
-                Image preview unavailable
-              </div>
-            )}
+              </figure>
+            </div>
           </Card>
 
           <Card className="p-5">
             <SectionHeading title="Pipeline & Image Quality Diagnostics" subtitle="Independent from statutory compliance scores." />
             <div className="grid grid-cols-2 gap-4 text-sm">
-              <QualityItem label="Image Quality" value={image ? 'Usable' : 'Unavailable'} />
+              <QualityItem label="Front Image Quality" value={image ? 'Usable' : 'Unavailable'} />
               <QualityItem label="OCR Status" value={rawOcr ? 'Readable text extracted' : 'No readable text'} />
               <QualityItem
                 label="OCR Confidence"
                 value={
-                  image?.ocr_confidence ?? label?.extraction_confidence
+                  image?.ocr_confidence != null || label?.extraction_confidence != null
                     ? `${Math.round(image?.ocr_confidence ?? label?.extraction_confidence ?? 0)}%`
                     : 'Not available'
                 }
@@ -469,6 +509,26 @@ export function ReportView() {
               )}
               <QualityItem label="Overall Assessment" value={confidence.label} />
             </div>
+
+            <div className="mt-5 grid grid-cols-1 gap-4 border-t border-outline-variant pt-4 sm:grid-cols-2">
+              <div>
+                <p className="text-xs font-semibold text-on-surface">Front OCR</p>
+                <pre className="mt-2 max-h-44 overflow-auto whitespace-pre-wrap rounded-lg bg-surface-container-lowest p-3 text-xs text-on-surface-variant font-mono">
+                  {frontOcr || label?.raw_ocr_text
+                    ? (frontOcr || label?.raw_ocr_text || '').trim()
+                    : 'No front OCR text was detected.'}
+                </pre>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-on-surface">Back OCR</p>
+                <pre className="mt-2 max-h-44 overflow-auto whitespace-pre-wrap rounded-lg bg-surface-container-lowest p-3 text-xs text-on-surface-variant font-mono">
+                  {backImage?.ocr_text
+                    ? backImage.ocr_text.trim()
+                    : 'No back OCR data available for this scan.'}
+                </pre>
+              </div>
+            </div>
+
             <details className="mt-5 border-t border-outline-variant pt-4">
               <summary className="cursor-pointer text-sm font-semibold text-on-surface">
                 View Raw OCR Text
@@ -499,19 +559,51 @@ function LoadingState() {
   return (
     <div className="mx-auto max-w-5xl py-16 text-center">
       <span className="material-symbols-outlined animate-spin text-4xl text-primary">autorenew</span>
-      <p className="mt-3 text-sm text-on-surface-variant">Evaluating Legal Metrology rules...</p>
+      <p className="mt-3 text-sm text-on-surface-variant">Loading report...</p>
+      <p className="mt-1 text-xs text-on-surface-variant">
+        Fetching inspection, OCR, and compliance data.
+      </p>
     </div>
   );
 }
 
-function ErrorState({ message, onNewScan }: { message: string; onNewScan: () => void }) {
+function ErrorState({
+  message,
+  onRetry,
+  onBack,
+}: {
+  message: string;
+  onRetry: () => void;
+  onBack: () => void;
+}) {
   return (
     <div className="mx-auto max-w-md py-16 text-center">
       <span className="material-symbols-outlined text-5xl text-error">error</span>
-      <h2 className="mt-3 text-xl font-bold text-on-surface">Report unavailable</h2>
+      <h2 className="mt-3 text-xl font-bold text-on-surface">Unable to load report</h2>
       <p className="mt-2 mb-6 text-sm text-on-surface-variant">{message}</p>
-      <Button variant="primary" onClick={onNewScan}>
-        Start new scan
+      <div className="flex flex-wrap justify-center gap-3">
+        <Button variant="primary" icon="refresh" onClick={onRetry}>
+          Try Again
+        </Button>
+        <Button variant="outline" icon="arrow_back" onClick={onBack}>
+          Back to History
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function NotFoundState({ onBack }: { onBack: () => void }) {
+  return (
+    <div className="mx-auto max-w-md py-16 text-center">
+      <span className="material-symbols-outlined text-5xl text-error">search_off</span>
+      <h2 className="mt-3 text-xl font-bold text-on-surface">Report not found</h2>
+      <p className="mt-2 mb-6 text-sm text-on-surface-variant">
+        The requested inspection report could not be found. It may have been deleted or the link may be
+        incorrect.
+      </p>
+      <Button variant="primary" icon="arrow_back" onClick={onBack}>
+        Back to History
       </Button>
     </div>
   );

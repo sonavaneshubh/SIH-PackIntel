@@ -199,7 +199,8 @@
   .report-actions,
   nav,
   aside,
-  header:not(.report-header) {
+  header:not(.report-header),
+  footer:not(.report-footer) {
     display: none !important;
   }
 
