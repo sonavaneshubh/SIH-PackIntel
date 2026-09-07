@@ -18,13 +18,11 @@ import { CONFLICT_SENSITIVE_FIELDS, parseProductInformation } from '@/types/prod
 import {
   buildPopulatedFields,
   formatDate,
-  formatExtractionSource,
   getConfidence,
   getStatus,
-  parsePipelineMeta,
   ComplianceResultWithRule,
 } from './reportUtils';
-import { ProductFieldValue, QualityItem, ResultPill, SectionHeading, SummaryItem } from './reportComponents';
+import { ProductFieldValue, ResultPill, SectionHeading, SummaryItem } from './reportComponents';
 import { cn } from '@/lib/utils';
 
 export function ReportView() {
@@ -110,12 +108,7 @@ export function ReportView() {
   const issues = enrichedResults.filter(
     (result) => result.status === 'FAIL' || result.status === 'UNCERTAIN'
   );
-  const frontOcr = image?.ocr_text || '';
-  const rawOcr = backImage?.ocr_text
-    ? `${frontOcr}\n\n────────────────────\nBACK SIDE OCR\n────────────────────\n${backImage.ocr_text}`.trim()
-    : frontOcr || label?.raw_ocr_text || '';
   const productInformation = parseProductInformation(label?.product_information);
-  const pipelineMeta = parsePipelineMeta(label?.other_declarations);
   const populatedFields = useMemo(
     () => buildPopulatedFields(inspection, label, productInformation),
     [inspection, label, productInformation]
@@ -190,6 +183,47 @@ export function ReportView() {
             {reportMessage}
           </p>
         )}
+
+        {/* Source Images */}
+        <section className="mb-6">
+          <Card className="p-5">
+            <SectionHeading title="Source Images" subtitle="Scanned package label artwork (front & back)." />
+            {imageUrl || backImageUrl ? (
+              <div className={cn('grid gap-3', backImageUrl ? 'grid-cols-1 sm:grid-cols-2' : '')}>
+                {imageUrl && (
+                  <figure>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={imageUrl}
+                      alt="Front side of scanned package label"
+                      className="max-h-72 w-full rounded-lg border border-outline-variant bg-surface-container-low object-contain"
+                    />
+                    <figcaption className="mt-1 text-center text-[11px] font-semibold text-on-surface-variant">
+                      Front Side
+                    </figcaption>
+                  </figure>
+                )}
+                {backImageUrl && (
+                  <figure>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={backImageUrl}
+                      alt="Back side of scanned package label"
+                      className="max-h-72 w-full rounded-lg border border-outline-variant bg-surface-container-low object-contain"
+                    />
+                    <figcaption className="mt-1 text-center text-[11px] font-semibold text-on-surface-variant">
+                      Back Side
+                    </figcaption>
+                  </figure>
+                )}
+              </div>
+            ) : (
+              <div className="grid h-48 place-items-center rounded-lg bg-surface-container-low text-sm text-on-surface-variant">
+                Image preview unavailable
+              </div>
+            )}
+          </Card>
+        </section>
 
         {/* Score & confidence */}
         <section className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-[1.35fr_0.65fr]">
@@ -408,76 +442,6 @@ export function ReportView() {
               </div>
             </Card>
           </div>
-        </section>
-
-        {/* Source Image + Quality Diagnostics */}
-        <section className="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-[0.8fr_1.2fr]">
-          <Card className="p-5">
-            <SectionHeading title="Source Images" subtitle="Scanned package label artwork (front & back)." />
-            {imageUrl || backImageUrl ? (
-              <div className={cn('grid gap-3', backImageUrl ? 'grid-cols-1 sm:grid-cols-2' : '')}>
-                {imageUrl && (
-                  <figure>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={imageUrl}
-                      alt="Front side of scanned package label"
-                      className="max-h-72 w-full rounded-lg border border-outline-variant bg-surface-container-low object-contain"
-                    />
-                    <figcaption className="mt-1 text-center text-[11px] font-semibold text-on-surface-variant">
-                      Front Side
-                    </figcaption>
-                  </figure>
-                )}
-                {backImageUrl && (
-                  <figure>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={backImageUrl}
-                      alt="Back side of scanned package label"
-                      className="max-h-72 w-full rounded-lg border border-outline-variant bg-surface-container-low object-contain"
-                    />
-                    <figcaption className="mt-1 text-center text-[11px] font-semibold text-on-surface-variant">
-                      Back Side
-                    </figcaption>
-                  </figure>
-                )}
-              </div>
-            ) : (
-              <div className="grid h-48 place-items-center rounded-lg bg-surface-container-low text-sm text-on-surface-variant">
-                Image preview unavailable
-              </div>
-            )}
-          </Card>
-
-          <Card className="p-5">
-            <SectionHeading title="Pipeline & Image Quality Diagnostics" subtitle="Independent from statutory compliance scores." />
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <QualityItem label="Image Quality" value={image ? 'Usable' : 'Unavailable'} />
-              <QualityItem label="OCR Status" value={rawOcr ? 'Readable text extracted' : 'No readable text'} />
-              <QualityItem
-                label="OCR Confidence"
-                value={
-                  image?.ocr_confidence ?? label?.extraction_confidence
-                    ? `${Math.round(image?.ocr_confidence ?? label?.extraction_confidence ?? 0)}%`
-                    : 'Not available'
-                }
-              />
-              <QualityItem label="Extraction Engine" value={formatExtractionSource(pipelineMeta)} />
-              {pipelineMeta.vision_used && (
-                <QualityItem label="Vision Verification" value="Multi-modal verified" />
-              )}
-              <QualityItem label="Overall Assessment" value={confidence.label} />
-            </div>
-            <details className="mt-5 border-t border-outline-variant pt-4">
-              <summary className="cursor-pointer text-sm font-semibold text-on-surface">
-                View Raw OCR Text
-              </summary>
-              <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap rounded-lg bg-surface-container-lowest p-3 text-xs text-on-surface-variant font-mono">
-                {rawOcr || 'No readable OCR text was detected.'}
-              </pre>
-            </details>
-          </Card>
         </section>
 
         <footer className="report-footer mt-8 border-t border-outline-variant pt-5 text-xs text-on-surface-variant">
