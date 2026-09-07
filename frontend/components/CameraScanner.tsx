@@ -163,42 +163,57 @@ export function CameraScanner({
     setTorchSupported(false);
   }, []);
 
-  // Detects whether the active video track can drive the torch/flashlight.
-  // Some Android Chrome builds expose torch through `applyConstraints` but not
-  // in `getCapabilities()`, so a no-flash probe with `torch: false` is used as
-  // a fallback. The result only gates whether the button is enabled — the icon
-  // itself stays visible so the feature is discoverable on every device.
-  const detectTorchSupport = useCallback(async (stream: MediaStream) => {
-    const track = stream.getVideoTracks()?.[0];
-    if (!track || typeof track.applyConstraints !== 'function') {
-      setTorchSupported(false);
-      return;
-    }
+  // Applies a torch state to the active video track. iOS Safari expects the
+  // top-level `torch` constraint while Chrome/Android historically want it
+  // wrapped in `advanced`, so we try both forms before giving up.
+  const applyTorch = useCallback(async (track: MediaStreamTrack, value: boolean) => {
+    const torchConstraint = { torch: value } as MediaTrackConstraintSet;
     try {
-      const capabilities = track.getCapabilities() as MediaTrackCapabilities & { torch?: boolean };
-      if (capabilities.torch === true) {
-        setTorchSupported(true);
+      await track.applyConstraints({ torch: value } as MediaTrackConstraints);
+      return;
+    } catch {
+      // Fall through to the advanced form.
+    }
+    await track.applyConstraints({ advanced: [torchConstraint] });
+  }, []);
+
+  // Detects whether the active video track can drive the torch/flashlight.
+  // Some browsers expose torch through `getCapabilities()`, others only via
+  // `applyConstraints`, so a no-flash probe with `torch: false` is used as a
+  // fallback. The result only optimises the UI — the button stays clickable so
+  // the feature is discoverable on every device.
+  const detectTorchSupport = useCallback(
+    async (stream: MediaStream) => {
+      const track = stream.getVideoTracks()?.[0];
+      if (!track || typeof track.applyConstraints !== 'function') {
+        setTorchSupported(false);
         return;
       }
-    } catch {
-      // Fall through to the probe.
-    }
-    try {
-      await track.applyConstraints({ advanced: [{ torch: false } as MediaTrackConstraintSet] });
-      setTorchSupported(true);
-    } catch {
-      setTorchSupported(false);
-    }
-  }, []);
+      try {
+        const capabilities = track.getCapabilities() as MediaTrackCapabilities & { torch?: boolean };
+        if (capabilities.torch === true) {
+          setTorchSupported(true);
+          return;
+        }
+      } catch {
+        // Fall through to the probe.
+      }
+      try {
+        await applyTorch(track, false);
+        setTorchSupported(true);
+      } catch {
+        setTorchSupported(false);
+      }
+    },
+    [applyTorch]
+  );
 
   const toggleTorch = useCallback(async () => {
     const track = streamRef.current?.getVideoTracks()?.[0];
     if (!track || typeof track.applyConstraints !== 'function') return;
     const next = !torchOnRef.current;
     try {
-      await track.applyConstraints({
-        advanced: [{ torch: next } as MediaTrackConstraintSet],
-      });
+      await applyTorch(track, next);
       torchOnRef.current = next;
       setTorchOn(next);
     } catch {
@@ -207,7 +222,7 @@ export function CameraScanner({
       setTorchOn(false);
       setTorchSupported(false);
     }
-  }, []);
+  }, [applyTorch]);
 
   const startCamera = useCallback(
     async (firstAttempt: boolean, attempt = 0) => {
@@ -669,18 +684,18 @@ export function CameraScanner({
           phase !== 'camera_error' &&
           phase !== 'initializing' &&
           phase !== 'processing' &&
-          phase !== 'completed' && (
+          phase !== 'completed' &&
+          torchSupported && (
           <button
             type="button"
             onClick={() => void toggleTorch()}
-            disabled={!torchSupported}
             aria-label={torchButtonLabel}
             aria-pressed={torchOn}
             title={torchButtonLabel}
-            className={`absolute bottom-3 left-4 z-[7] flex size-10 items-center justify-center rounded-full border backdrop-blur-sm transition-colors disabled:cursor-not-allowed ${
+            className={`absolute bottom-3 left-4 z-[7] flex size-10 items-center justify-center rounded-full border backdrop-blur-sm transition-colors ${
               torchOn
                 ? 'border-[#00bfa5] bg-[#00bfa5] text-white'
-                : 'border-white/25 bg-black/45 text-white hover:bg-black/60 disabled:opacity-40'
+                : 'border-white/25 bg-black/45 text-white hover:bg-black/60'
             }`}
           >
             {torchOn ? (
