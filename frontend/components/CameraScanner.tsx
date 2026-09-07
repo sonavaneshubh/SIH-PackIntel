@@ -177,6 +177,25 @@ export function CameraScanner({
     await track.applyConstraints({ advanced: [torchConstraint] });
   }, []);
 
+  // Re-opens the camera with the `torch` constraint included in `getUserMedia`.
+  // This is the only reliable fallback on devices (common on Android) that
+  // refuse to change the torch after the stream is already live.
+  const openStreamWithTorch = useCallback(async (torch: boolean) => {
+    const videoConstraints = {
+      facingMode: 'environment',
+      torch: torch || undefined,
+    } as MediaTrackConstraints;
+    try {
+      return await navigator.mediaDevices.getUserMedia({
+        video: videoConstraints,
+        audio: false,
+      });
+    } catch (error) {
+      if (torch || (error as DOMException)?.name === 'OverconstrainedError') throw error;
+      return navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    }
+  }, []);
+
   // Detects whether the active video track can drive the torch/flashlight.
   // Some browsers expose torch through `getCapabilities()`, others only via
   // `applyConstraints`, so a no-flash probe with `torch: false` is used as a
@@ -209,20 +228,43 @@ export function CameraScanner({
   );
 
   const toggleTorch = useCallback(async () => {
-    const track = streamRef.current?.getVideoTracks()?.[0];
+    const current = streamRef.current;
+    const track = current?.getVideoTracks()?.[0];
     if (!track || typeof track.applyConstraints !== 'function') return;
     const next = !torchOnRef.current;
+
+    // First try changing the torch live on the running track (fast path).
     try {
       await applyTorch(track, next);
       torchOnRef.current = next;
       setTorchOn(next);
+      return;
     } catch {
-      // Some devices reject mid-stream torch toggles; degrade gracefully.
+      // Many devices reject mid-stream torch toggles → restart the camera with
+      // the torch constraint baked into getUserMedia.
+    }
+
+    try {
+      const stream = await openStreamWithTorch(next);
+      current.getTracks().forEach((streamTrack) => streamTrack.stop());
+      streamRef.current = stream;
+      torchOnRef.current = next;
+      setTorchOn(next);
+      setTorchSupported(true);
+      const video = videoRef.current;
+      if (video) {
+        video.srcObject = stream;
+        video.muted = true;
+        video.playsInline = true;
+        await video.play().catch(() => undefined);
+      }
+    } catch {
+      // The device exposed no way to control the torch.
       torchOnRef.current = false;
       setTorchOn(false);
       setTorchSupported(false);
     }
-  }, [applyTorch]);
+  }, [applyTorch, openStreamWithTorch]);
 
   const startCamera = useCallback(
     async (firstAttempt: boolean, attempt = 0) => {
@@ -684,8 +726,7 @@ export function CameraScanner({
           phase !== 'camera_error' &&
           phase !== 'initializing' &&
           phase !== 'processing' &&
-          phase !== 'completed' &&
-          torchSupported && (
+          phase !== 'completed' && (
           <button
             type="button"
             onClick={() => void toggleTorch()}
