@@ -40,6 +40,27 @@ const DEMO_INSPECTOR: InspectorProfile = {
   isDemo: true,
 };
 
+// Resolves the promise only if it settles within `ms`; otherwise resolves to
+// `fallback`. Prevents stale/invalid Supabase session refreshes (e.g. a stored
+// sb-<project>-auth-token in localStorage) from blocking auth initialization
+// forever and leaving the app pinned to the "Verifying inspector credentials"
+// loading screen.
+async function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((resolve) => {
+        timer = setTimeout(() => resolve(fallback), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+const AUTH_TIMEOUT_MS = 5000;
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -96,14 +117,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async function initializeAuth() {
       try {
         if (isSupabaseConfigured) {
-          const { data, error } = await supabase.auth.getSession();
+          const { data, error } = await withTimeout(
+            supabase.auth.getSession(),
+            AUTH_TIMEOUT_MS,
+            { data: { session: null }, error: null }
+          );
           if (error) {
             // Stale or invalid refresh token - clear session cleanly
             await supabase.auth.signOut().catch(() => {});
           } else if (data?.session?.user && mounted) {
             setSession(data.session);
             setSupabaseUser(data.session.user);
-            const profile = await loadProfileFromSupabase(data.session.user);
+            const profile = await withTimeout(
+              loadProfileFromSupabase(data.session.user),
+              AUTH_TIMEOUT_MS,
+              mapSupabaseUserToProfile(data.session.user)
+            ).catch(() => mapSupabaseUserToProfile(data.session.user));
             setUser(profile);
             setIsLoading(false);
             return;
@@ -141,7 +170,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (currentSession?.user) {
           setSession(currentSession);
           setSupabaseUser(currentSession.user);
-          const profile = await loadProfileFromSupabase(currentSession.user);
+          const profile = await withTimeout(
+            loadProfileFromSupabase(currentSession.user),
+            AUTH_TIMEOUT_MS,
+            mapSupabaseUserToProfile(currentSession.user)
+          ).catch(() => mapSupabaseUserToProfile(currentSession.user));
           setUser(profile);
           if (typeof window !== 'undefined') {
             localStorage.removeItem('packintel_demo_session');
