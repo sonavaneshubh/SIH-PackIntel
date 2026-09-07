@@ -95,7 +95,22 @@ export function RecentInspectionsView() {
       />
 
       {isLoading ? (
-        <EmptyState icon="hourglass_empty" title="Loading inspections…" description="Fetching your recent inspection records." />
+        <div className="animate-pulse rounded-2xl border border-[#E2E8F0] bg-white" aria-hidden="true">
+          <div className="border-b border-[#E2E8F0] p-4">
+            <div className="flex gap-2">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <div key={i} className="h-8 w-20 rounded-lg bg-slate-200" />
+              ))}
+            </div>
+          </div>
+          {Array.from({ length: 6 }).map((_, row) => (
+            <div key={row} className="flex items-center gap-4 border-b border-[#F1F5F9] px-4 py-3">
+              <div className="h-4 w-28 rounded bg-slate-200/80" />
+              <div className="h-4 w-40 rounded bg-slate-200/80" />
+              <div className="ml-auto h-4 w-16 rounded bg-slate-200/80" />
+            </div>
+          ))}
+        </div>
       ) : error ? (
         <EmptyState
           icon="error"

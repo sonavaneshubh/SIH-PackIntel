@@ -7,11 +7,14 @@ import { DashboardHeader } from './DashboardHeader';
 import { MetricCard } from './MetricCard';
 import { InspectionActivityCard } from './InspectionActivityCard';
 import { RecentInspectionsCard } from './RecentInspectionsCard';
+import { AllSetCard } from './AllSetCard';
+import { QuickActionsCard } from './QuickActionsCard';
+import { HighlightsCard } from './HighlightsCard';
 import { StatusDistributionCard } from './StatusDistributionCard';
 import { AllSetCard } from './AllSetCard';
 import { QuickActionsCard } from './QuickActionsCard';
 import { HighlightsCard } from './HighlightsCard';
-import { weeklyChangePercent } from './dashboardData';
+import { weeklyChangePercent, buildActivitySeries } from './dashboardData';
 
 export function DashboardView() {
   const { stats, isLoading: statsLoading, error: statsError } = useDashboardStats();
@@ -23,6 +26,12 @@ export function DashboardView() {
   const total = stats.total || 0;
   const complianceRate = total > 0 ? Math.round((stats.compliant / total) * 100) : 0;
   const weeklyChange = weeklyChangePercent(inspections);
+  // small sparkline series for KPI cards (last 8 days)
+  const series8 = buildActivitySeries(inspections, 8);
+  const sparkTotal = series8.map((s) => s.count);
+  const sparkPending = buildActivitySeries(inspections.filter((it) => (it.overall_result || '') === 'review'), 8).map((s) => s.count);
+  const sparkCompliant = buildActivitySeries(inspections.filter((it) => (it.overall_result || '') === 'pass'), 8).map((s) => s.count);
+  const sparkHighPriority = buildActivitySeries(inspections.filter((it) => (it.risk_score ?? 0) >= 76), 8).map((s) => s.count);
 
   if (loading) {
     return (
@@ -56,6 +65,7 @@ export function DashboardView() {
             description={weeklyChange == null ? 'Total inspections recorded' : `${Math.abs(weeklyChange)}% from last 7 days`}
             icon="package_2"
             tone="green"
+            sparkData={sparkTotal}
           />
           <MetricCard
             title="Pending Review"
@@ -63,6 +73,7 @@ export function DashboardView() {
             description="Requires attention"
             icon="error"
             tone="orange"
+            sparkData={sparkPending}
           />
           <MetricCard
             title="Compliance Rate"
@@ -70,6 +81,7 @@ export function DashboardView() {
             description={`${stats.compliant} of ${total} compliant`}
             icon="shield"
             tone="purple"
+            sparkData={sparkCompliant}
           />
           <MetricCard
             title="Immediate Attention"
@@ -77,6 +89,7 @@ export function DashboardView() {
             description="Critical violations found"
             icon="report"
             tone="red"
+            sparkData={sparkHighPriority}
           />
         </div>
 
@@ -87,6 +100,14 @@ export function DashboardView() {
             <RecentInspectionsCard items={inspections.slice(0, 4)} />
           </div>
 
+              <div className="flex min-w-0 flex-col gap-4">
+                <StatusDistributionCard stats={stats} />
+                <AllSetCard />
+                <QuickActionsCard />
+                <HighlightsCard stats={stats} complianceRate={complianceRate} weeklyChange={weeklyChange} />
+              </div>
+            </div>
+            
           <div className="flex min-w-0 flex-col gap-4">
             <StatusDistributionCard stats={stats} />
             <AllSetCard />

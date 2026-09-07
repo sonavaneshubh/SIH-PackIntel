@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/authContext';
 import { Sidebar } from './Sidebar';
 import { TopNavBar } from './TopNavBar';
 import { Footer } from './Footer';
+import { cn } from '@/lib/utils';
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -17,49 +18,45 @@ export function AppShell({ children, pageTitle }: AppShellProps) {
   const { user, isLoading } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // Redirect to login only once auth has resolved and there is no session.
+  // Rendering is never blocked on auth — pages paint their layout immediately
+  // and are redirected later if the visitor is not signed in.
   useEffect(() => {
     if (!isLoading && !user) {
       router.replace('/login');
     }
   }, [user, isLoading, router]);
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 antialiased">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-primary text-on-primary flex items-center justify-center font-bold shadow-md animate-pulse">
-            <span className="material-symbols-outlined text-[28px]">verified_user</span>
-          </div>
-          <div className="text-center">
-            <h3 className="text-base font-bold text-on-surface">PackIntel</h3>
-            <p className="text-xs text-on-surface-variant flex items-center justify-center gap-1.5 mt-1">
-              <span className="w-2 h-2 rounded-full bg-primary animate-ping" />
-              Verifying inspector credentials...
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const handleMenuToggle = useCallback(() => {
+    setSidebarOpen((prev) => !prev);
+  }, []);
 
-  if (!user) {
-    return null;
-  }
+  const handleCloseSidebar = useCallback(() => {
+    setSidebarOpen(false);
+  }, []);
 
   return (
-    <div className="bg-background text-on-background flex min-h-screen antialiased">
-      {/* Sidebar navigation */}
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+    <div className="flex h-screen w-full overflow-hidden bg-background text-on-background antialiased">
+      {/* Sidebar — always fixed to the viewport (never scrolls with content) */}
+      <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} />
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col md:ml-[220px] min-h-screen overflow-x-hidden">
-        <TopNavBar
-          pageTitle={pageTitle}
-          onMenuToggle={() => setSidebarOpen((prev) => !prev)}
-        />
-        <main className="flex-1 bg-[#F4F7FC] p-4 md:p-6 overflow-y-auto">
-          {children}
-        </main>
+      {/*
+        Main Content Area.
+        - Scrolls independently inside (h-screen + overflow-y-auto).
+        - On desktop, margin-left offsets it by the fixed sidebar width so it
+          always sits beside the sidebar without causing horizontal overflow.
+        - On mobile, the sidebar overlays, so no margin needed.
+      */}
+      <div
+        className={cn(
+          'h-screen flex-1 overflow-y-auto flex flex-col',
+          'transition-[margin] duration-300 ease-in-out',
+          // Desktop: shift content by the fixed sidebar width when open
+          sidebarOpen ? 'md:ml-[260px]' : 'md:ml-0'
+        )}
+      >
+        <TopNavBar pageTitle={pageTitle} onMenuToggle={handleMenuToggle} />
+        <main className="bg-[#F4F7FC] p-4 md:p-6 flex-1">{children}</main>
         <Footer />
       </div>
     </div>

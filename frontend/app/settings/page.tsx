@@ -766,12 +766,37 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        <div className="bg-surface border border-outline-variant rounded-xl p-6 shadow-xs">
+          <h3 className="text-headline-md font-headline-md text-on-surface mb-4">
+            Stitch MCP & Platform Integration
+          </h3>
+          <div className="space-y-3 text-xs text-on-surface-variant">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 py-2 border-b border-outline-variant/60">
+              <span className="font-medium text-on-surface shrink-0">Design System Source</span>
+              <span className="font-mono text-primary break-all">Google Stitch MCP (Project: 6874572683199449301)</span>
+            </div>
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 py-2 border-b border-outline-variant/60">
+              <span className="font-medium text-on-surface shrink-0">Active Color Theme</span>
+              <span>Regulatory Integrity Interface (#1A73E8 / #005BBF)</span>
+            </div>
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 py-2 border-b border-outline-variant/60">
+              <span className="font-medium text-on-surface shrink-0">Typography Engine</span>
+              <span>Google Inter • Enterprise Density</span>
+            </div>
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 py-2">
+              <span className="font-medium text-on-surface shrink-0">Rule Codification</span>
+              <span>Legal Metrology (Packaged Commodities) Act, 2011</span>
+            </div>
+          </div>
+        </div>
         {!isAdmin && (
           <div className="mt-4 pt-3 border-t border-outline-variant flex items-center gap-2 text-[11px] text-on-surface-variant">
             <span className="material-symbols-outlined text-[14px]">admin_panel_settings</span>
             Admin access required to modify compliance rules.
           </div>
         )}
+        </div>
+      </div>
       </SectionCard>
     </div>
   );

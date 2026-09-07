@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
@@ -63,53 +63,53 @@ const AUTH_TIMEOUT_MS = 5000;
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Helper to map Supabase User to InspectorProfile (pure, stable)
+function mapSupabaseUserToProfile(sbUser: User): InspectorProfile {
+  const meta = sbUser.user_metadata || {};
+  return {
+    id: sbUser.id,
+    email: sbUser.email || '',
+    name: meta.full_name || meta.name || 'Compliance Officer',
+    role: meta.role || 'Legal Metrology Inspector',
+    department: meta.department || 'Dept. of Consumer Affairs',
+    isDemo: false,
+  };
+}
+
+// Load profile from Supabase profiles table (pure, stable)
+async function loadProfileFromSupabase(sbUser: User): Promise<InspectorProfile> {
+  if (!isSupabaseConfigured) {
+    return mapSupabaseUserToProfile(sbUser);
+  }
+
+  try {
+    const { data, error } = await getMyProfile();
+    if (!error && data) {
+      return {
+        id: data.id,
+        email: data.email || sbUser.email || '',
+        name: data.full_name || sbUser.user_metadata?.full_name || 'Compliance Officer',
+        role: data.designation || sbUser.user_metadata?.role || 'Legal Metrology Inspector',
+        department: data.department || sbUser.user_metadata?.department || 'Dept. of Consumer Affairs',
+        employeeId: data.employee_id,
+        avatarUrl: data.avatar_url,
+        isDemo: false,
+      };
+    }
+  } catch (err) {
+    console.error('Failed to load profile from Supabase:', err);
+  }
+
+  // Fallback to user metadata
+  return mapSupabaseUserToProfile(sbUser);
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [user, setUser] = useState<InspectorProfile | null>(null);
   const [supabaseUser, setSupabaseUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-
-  // Helper to map Supabase User to InspectorProfile
-  const mapSupabaseUserToProfile = (sbUser: User): InspectorProfile => {
-    const meta = sbUser.user_metadata || {};
-    return {
-      id: sbUser.id,
-      email: sbUser.email || '',
-      name: meta.full_name || meta.name || 'Compliance Officer',
-      role: meta.role || 'Legal Metrology Inspector',
-      department: meta.department || 'Dept. of Consumer Affairs',
-      isDemo: false,
-    };
-  };
-
-  // Load profile from Supabase profiles table
-  const loadProfileFromSupabase = async (sbUser: User): Promise<InspectorProfile> => {
-    if (!isSupabaseConfigured) {
-      return mapSupabaseUserToProfile(sbUser);
-    }
-
-    try {
-      const { data, error } = await getMyProfile();
-      if (!error && data) {
-        return {
-          id: data.id,
-          email: data.email || sbUser.email || '',
-          name: data.full_name || sbUser.user_metadata?.full_name || 'Compliance Officer',
-          role: data.designation || sbUser.user_metadata?.role || 'Legal Metrology Inspector',
-          department: data.department || sbUser.user_metadata?.department || 'Dept. of Consumer Affairs',
-          employeeId: data.employee_id,
-          avatarUrl: data.avatar_url,
-          isDemo: false,
-        };
-      }
-    } catch (err) {
-      console.error('Failed to load profile from Supabase:', err);
-    }
-
-    // Fallback to user metadata
-    return mapSupabaseUserToProfile(sbUser);
-  };
 
   useEffect(() => {
     let mounted = true;
@@ -199,7 +199,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const signIn = async ({ email, password }: { email: string; password: string }) => {
+  const signInWithDemo = useCallback(async () => {
+    setIsLoading(true);
+    setUser(DEMO_INSPECTOR);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('packintel_demo_session', JSON.stringify(DEMO_INSPECTOR));
+    }
+    setIsLoading(false);
+    router.push('/');
+  }, [router]);
+
+  const signIn = useCallback(async ({ email, password }: { email: string; password: string }) => {
     setIsLoading(true);
     try {
       if (isSupabaseConfigured) {
@@ -257,9 +267,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [router, signInWithDemo]);
 
-  const signUp = async ({ email, password, fullName }: { email: string; password: string; fullName?: string }) => {
+  const signUp = useCallback(async ({ email, password, fullName }: { email: string; password: string; fullName?: string }) => {
     setIsLoading(true);
     try {
       if (isSupabaseConfigured) {
@@ -300,19 +310,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [router]);
 
-  const signInWithDemo = async () => {
-    setIsLoading(true);
-    setUser(DEMO_INSPECTOR);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('packintel_demo_session', JSON.stringify(DEMO_INSPECTOR));
-    }
-    setIsLoading(false);
-    router.push('/');
-  };
-
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     setIsLoading(true);
     try {
       if (isSupabaseConfigured) {
@@ -330,9 +330,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(false);
       router.push('/login');
     }
-  };
+  }, [router]);
 
-  const resetPassword = async (email: string) => {
+  const resetPassword = useCallback(async (email: string) => {
     if (!email || !email.includes('@')) {
       return { success: false, error: 'Please enter a valid inspector email address.' };
     }
@@ -353,9 +353,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       return { success: false, error: 'Failed to process password reset request.' };
     }
-  };
+  }, []);
 
-  const updatePassword = async (password: string) => {
+  const updatePassword = useCallback(async (password: string) => {
     if (!password || password.length < 6) {
       return { success: false, error: 'Password must be at least 6 characters long.' };
     }
@@ -371,24 +371,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       return { success: false, error: 'Failed to update password.' };
     }
-  };
+  }, []);
+
+  const contextValue = useMemo<AuthContextType>(
+    () => ({
+      user,
+      supabaseUser,
+      session,
+      isLoading,
+      isSupabaseConnected: isSupabaseConfigured,
+      signIn,
+      signUp,
+      signInWithDemo,
+      signOut,
+      resetPassword,
+      updatePassword,
+    }),
+    [
+      user,
+      supabaseUser,
+      session,
+      isLoading,
+      signIn,
+      signUp,
+      signInWithDemo,
+      signOut,
+      resetPassword,
+      updatePassword,
+    ]
+  );
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        supabaseUser,
-        session,
-        isLoading,
-        isSupabaseConnected: isSupabaseConfigured,
-        signIn,
-        signUp,
-        signInWithDemo,
-        signOut,
-        resetPassword,
-        updatePassword,
-      }}
-    >
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );

@@ -480,7 +480,7 @@ function UploadPanel({
           disabled={disabled}
         />
       </div>
-      <div className="mt-4 flex items-center justify-between gap-3">
+      <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <p className="text-[11px] text-[#64748b]">JPG, PNG, WEBP · max 15MB per image.</p>
         <Button variant="primary" size="sm" onClick={onContinue} disabled={!frontUpload || disabled}>
           <CloudUpload size={14} aria-hidden="true" />
