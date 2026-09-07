@@ -787,6 +787,8 @@ export default function SettingsPage() {
               <span className="font-medium text-on-surface shrink-0">Rule Codification</span>
               <span>Legal Metrology (Packaged Commodities) Act, 2011</span>
             </div>
+          </div>
+        </div>
         {!isAdmin && (
           <div className="mt-4 pt-3 border-t border-outline-variant flex items-center gap-2 text-[11px] text-on-surface-variant">
             <span className="material-symbols-outlined text-[14px]">admin_panel_settings</span>

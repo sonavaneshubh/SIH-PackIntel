@@ -7,6 +7,9 @@ import { DashboardHeader } from './DashboardHeader';
 import { MetricCard } from './MetricCard';
 import { InspectionActivityCard } from './InspectionActivityCard';
 import { RecentInspectionsCard } from './RecentInspectionsCard';
+import { AllSetCard } from './AllSetCard';
+import { QuickActionsCard } from './QuickActionsCard';
+import { HighlightsCard } from './HighlightsCard';
 import { StatusDistributionCard } from './StatusDistributionCard';
 import { ComplianceStatusCard } from './ComplianceStatusCard';
 import { weeklyChangePercent, buildActivitySeries } from './dashboardData';
@@ -92,8 +95,7 @@ export function DashboardView() {
                 <HighlightsCard stats={stats} complianceRate={complianceRate} weeklyChange={weeklyChange} />
               </div>
             </div>
-          </>
-        )}
+            
       </div>
     </AppShell>
   );

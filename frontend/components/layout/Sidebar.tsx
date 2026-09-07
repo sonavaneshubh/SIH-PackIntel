@@ -43,13 +43,6 @@ const PRIMARY_NAV: NavItem[] = [
     matchHint: (p) => p.startsWith("/scan"),
   },
   {
-    label: "Scan History",
-    href: "/history",
-    icon: "history",
-    prefetch: true,
-    matchHint: (p) => p === "/history",
-  },
-  {
     label: "Recent Inspections",
     href: "/recent-inspections",
     icon: "query_stats",
@@ -103,6 +96,11 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { signOut } = useAuth();
 
+  const handleSignOut = useCallback(() => {
+    signOut();
+    onClose();
+  }, [signOut, onClose]);
+
   const navItems = [
     {
       label: "Dashboard",
@@ -115,12 +113,6 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       href: "/scan/new",
       icon: "barcode_scanner",
       isActive: pathname.startsWith("/scan"),
-    },
-    {
-      label: "Scan History",
-      href: "/history",
-      icon: "history",
-      isActive: pathname === "/history",
     },
     {
       label: "Recent Inspections",
@@ -287,4 +279,4 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       </aside>
     </>
   );
-});
+}
