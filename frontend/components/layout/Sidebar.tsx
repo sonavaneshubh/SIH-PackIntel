@@ -99,17 +99,10 @@ const PRIMARY_NAV: NavItem[] = [
   },
 ];
 
-export const Sidebar = React.memo(function Sidebar({
-  isOpen,
-  onClose,
-}: SidebarProps) {
+export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { signOut } = useAuth();
 
-  const handleSignOut = useCallback(async () => {
-    onClose();
-    await signOut();
-  }, [onClose, signOut]);
   const navItems = [
     {
       label: "Dashboard",
@@ -122,6 +115,12 @@ export const Sidebar = React.memo(function Sidebar({
       href: "/scan/new",
       icon: "barcode_scanner",
       isActive: pathname.startsWith("/scan"),
+    },
+    {
+      label: "Scan History",
+      href: "/history",
+      icon: "history",
+      isActive: pathname === "/history",
     },
     {
       label: "Recent Inspections",

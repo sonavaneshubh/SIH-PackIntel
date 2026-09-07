@@ -167,8 +167,7 @@ export default function RulesPage() {
               {rule.description}
             </p>
 
-            <div className="bg-surface-container-low p-3 rounded-lg flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 text-xs">
-            <div className="bg-surface-container-low p-3 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+            <div className="bg-surface-container-low p-3 rounded-lg flex items-center justify-between text-xs">
               <span className="text-on-surface-variant">
                 Standard Statutory Penalty:
               </span>
