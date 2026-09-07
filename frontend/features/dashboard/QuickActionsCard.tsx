@@ -12,7 +12,7 @@ interface QuickAction {
 
 const actions: QuickAction[] = [
   { label: 'Start New Scan', icon: 'qr_code_scanner', href: '/scan/new' },
-  { label: 'View Scan History', icon: 'history', href: '/history' },
+  { label: 'View Recent Inspections', icon: 'query_stats', href: '/recent-inspections' },
   { label: 'Check Violations', icon: 'report', href: '/analytics' },
   { label: 'Open Reports', icon: 'description', href: '/reports' },
 ];

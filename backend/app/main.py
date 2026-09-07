@@ -49,10 +49,16 @@ origins = [
     settings.FRONTEND_URL,
 ]
 
+# Vercel production + preview deployments. FRONTEND_URL (set in Render env)
+# covers the apex custom domain; this regex also lets every `*.vercel.app`
+# preview URL talk to the API without per-deployment CORS edits.
+allow_origin_regex = r"https://.*\.vercel\.app"
+
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=allow_origin_regex,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],

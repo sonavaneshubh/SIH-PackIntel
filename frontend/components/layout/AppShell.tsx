@@ -11,9 +11,10 @@ import { cn } from '@/lib/utils';
 interface AppShellProps {
   children: React.ReactNode;
   pageTitle?: string;
+  noPadding?: boolean;
 }
 
-export function AppShell({ children, pageTitle }: AppShellProps) {
+export function AppShell({ children, pageTitle, noPadding = false }: AppShellProps) {
   const router = useRouter();
   const { user, isLoading } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -56,8 +57,10 @@ export function AppShell({ children, pageTitle }: AppShellProps) {
         )}
       >
         <TopNavBar pageTitle={pageTitle} onMenuToggle={handleMenuToggle} />
-        <main className="bg-[#F4F7FC] p-4 md:p-6 flex-1">{children}</main>
-        <Footer />
+        <main className={`bg-[#F4F7FC] flex-1 ${noPadding ? '' : 'p-4 md:p-6'}`}>
+          {children}
+        </main>
+        {!noPadding && <Footer />}
       </div>
     </div>
   );

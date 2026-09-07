@@ -1,9 +1,15 @@
-"""Gemini Vision: primary image understanding + product-field extraction.
+"""Gemini Vision: OCR-text product-field extraction.
 
-The service sends the actual package image to Gemini (via google-genai),
-requests structured JSON per the 26-field canonical schema, validates and
+The service consumes the raw OCR text produced by Google Cloud Vision
+(front + back sides combined) and sends it to Gemini (via google-genai),
+requesting structured JSON per the canonical field schema, then validates and
 normalizes every value, and returns a ``GeminiVisionResult`` that can be fed
 directly into the compliance engine.
+
+Gemini never performs OCR on the image in this path. Extraction is driven by
+the text Gemini receives, so no value can be invented that is not supported by
+the OCR output. Images are only ever read by Google Cloud Vision (with the
+Tesseract fallback), keeping the image↔text responsibility separate.
 
 If the Gemini call fails, times out, returns unusable JSON, or cannot extract
 any meaningful field, the caller should fall back to the existing
@@ -14,13 +20,10 @@ Design
 * ``response_mime_type`` is set to ``application/json`` so the model returns
   valid JSON only.
 * Each extracted field carries: value, confidence (0-100), status, evidence
-  (the exact text from the image justifying the extraction), and
-  ``source="gemini_vision"``.
+  (the exact OCR text justifying the extraction), and ``source="gemini_vision"``.
 * Nutrition values (Carbohydrate, Sugars, Protein …) are explicitly excluded
   from manufacturer/packer/net-quantity/MRP fields via prompt + validation.
 * VEG / vegetarian symbol is mapped only to ``vegetarian_mark``.
-* ``image_quality`` (GOOD/FAIR/POOR) and ``readability_quality``
-  (HIGH/MEDIUM/LOW) are returned by the model so the pipeline can adapt.
 """
 
 from __future__ import annotations
@@ -217,6 +220,86 @@ Return ONLY a single valid JSON object (no markdown, no explanation).
     "overall_visual_confidence": <int 0-100>,
     "label_region_clarity": "clear"|"partial"|"obscured"
   }
+}
+"""
+
+# Prompt used when Gemini is fed OCR TEXT (front + back combined) instead of
+# the raw image. Gemini must extract fields ONLY from the text it is given.
+_TEXT_EXTRACT_PROMPT = """\
+You are an expert Indian food-packaging label extractor for Legal Metrology compliance.
+
+You will be given the raw OCR text read from a packaged food product's label
+(this may combine the FRONT and BACK of the package). Convert that text into
+structured product fields.
+
+## HARD RULES
+1. Extract ONLY information that is literally present in the OCR text you were
+   given. Do NOT guess, infer, autocomplete, or fetch from memory.
+2. Use null for any field that is not supported by the text. Never invent a value.
+3. Preserve the exact printed value when it is clear (fix only OCR spacing/OCR
+   character errors, e.g. 'MFR' -> 'MFG', 'MIT' -> 'NET', 'Rs1O' -> 'Rs 10').
+4. This is a strict extraction task. NEVER evaluate or state whether the product
+   is legally compliant — return the structured fields only.
+
+## FIELD RULES
+- brand_or_commodity_name / generic_name: product title, brand, or commodity name
+  (e.g. generic like "Biscuits", "Rice", "Cooking Oil").
+- net_quantity: only an explicit NET WT / NET QTY / NET QUANTITY / NET CONTENT
+  value (e.g. "500 g", "1 kg", "250 ml"). NEVER a nutrition value
+  (Carbohydrate, Protein, Sugars, Sodium, Energy, kcal are not net quantity).
+- quantity_unit: the unit (g, kg, ml, l, pcs) from net_quantity.
+- manufacturer_name / manufacturer_address: the entity under "Manufactured by /
+  Mfd. by / Mfg. by" and its address. Never a nutrition string.
+- packer_name / packer_address: entity under "Packed by / Packed for".
+- marketer_name / marketer_address: entity under "Marketed by / Distributed by".
+- importer_name / importer_address: entity under "Imported by" and its address.
+- mrp: price string (e.g. "Rs. 120", "₹120", "MRP 120"). Not a nutrition number.
+- mrp_tax_inclusive: "Yes" if the text says "Incl. of all taxes"/"Inclusive of
+  all taxes", else null.
+- unit_sale_price: per-unit pricing if present (e.g. "Rs. 12 per 100g").
+- manufacturing_date: MFD / MFG date. packing_date: PKD / packed date.
+- expiry_date: Best Before / Use By / Expiry.
+- batch_number: Batch No. / Lot No.
+- customer_care_phone / toll_free_number / customer_care_email: customer care
+  contact block.
+- country_of_origin: "Country of Origin: India" etc.
+- vegetarian_mark / non_vegetarian_mark: "Present" only if VEG / NON-VEG wording
+  is in the text, else null.
+- fssai_number: 14-digit FSSAI licence number.
+- certifications: ISO / AGMARK / BIS / FPO marks if named in the text.
+
+## OUTPUT FORMAT
+Return ONLY a single valid JSON object (no markdown, no explanation):
+
+{
+  "brand_or_commodity_name": {"value": <string|null>, "confidence": <int 0-100>, "status": "detected"|"not_visible", "evidence": <string|null>},
+  "generic_name": {"value": ..., "confidence": ..., "status": ..., "evidence": ...},
+  "net_quantity": {"value": ..., "confidence": ..., "status": ..., "evidence": ...},
+  "quantity_unit": {"value": ..., "confidence": ..., "status": ..., "evidence": ...},
+  "manufacturer_name": {"value": ..., "confidence": ..., "status": ..., "evidence": ...},
+  "manufacturer_address": {"value": ..., "confidence": ..., "status": ..., "evidence": ...},
+  "packer_name": {"value": ..., "confidence": ..., "status": ..., "evidence": ...},
+  "packer_address": {"value": ..., "confidence": ..., "status": ..., "evidence": ...},
+  "marketer_name": {"value": ..., "confidence": ..., "status": ..., "evidence": ...},
+  "marketer_address": {"value": ..., "confidence": ..., "status": ..., "evidence": ...},
+  "importer_name": {"value": ..., "confidence": ..., "status": ..., "evidence": ...},
+  "importer_address": {"value": ..., "confidence": ..., "status": ..., "evidence": ...},
+  "mrp": {"value": ..., "confidence": ..., "status": ..., "evidence": ...},
+  "mrp_tax_inclusive": {"value": ..., "confidence": ..., "status": ..., "evidence": ...},
+  "unit_sale_price": {"value": ..., "confidence": ..., "status": ..., "evidence": ...},
+  "packing_date": {"value": ..., "confidence": ..., "status": ..., "evidence": ...},
+  "manufacturing_date": {"value": ..., "confidence": ..., "status": ..., "evidence": ...},
+  "expiry_date": {"value": ..., "confidence": ..., "status": ..., "evidence": ...},
+  "batch_number": {"value": ..., "confidence": ..., "status": ..., "evidence": ...},
+  "customer_care_name": {"value": ..., "confidence": ..., "status": ..., "evidence": ...},
+  "customer_care_phone": {"value": ..., "confidence": ..., "status": ..., "evidence": ...},
+  "toll_free_number": {"value": ..., "confidence": ..., "status": ..., "evidence": ...},
+  "customer_care_email": {"value": ..., "confidence": ..., "status": ..., "evidence": ...},
+  "country_of_origin": {"value": ..., "confidence": ..., "status": ..., "evidence": ...},
+  "vegetarian_mark": {"value": ..., "confidence": ..., "status": ..., "evidence": ...},
+  "non_vegetarian_mark": {"value": ..., "confidence": ..., "status": ..., "evidence": ...},
+  "fssai_number": {"value": ..., "confidence": ..., "status": ..., "evidence": ...},
+  "certifications": {"value": ..., "confidence": ..., "status": ..., "evidence": ...}
 }
 """
 
@@ -506,7 +589,7 @@ class GeminiVisionService:
             try:
                 pil_image = cls._fetch_image(image_ref)
             except Exception as exc:
-                logger.warning("Gemini primary: could not load image: %s", exc)
+                logger.warning("GEMINI: could not load image, using fallback: %s", exc)
                 return GeminiVisionResult(success=False, error=f"Could not load image: {exc}")
 
         if pil_image.mode != "RGB":
@@ -535,20 +618,20 @@ class GeminiVisionService:
                     ),
                 )
         except Exception as exc:
-            logger.warning("Gemini primary request failed: %s", exc)
+            logger.warning("GEMINI: image request failed, using fallback: %s", exc)
             return GeminiVisionResult(success=False, error=f"Gemini API error: {exc}")
 
         # ---- Parse response ----
         try:
             text = str(response.text or "")
         except (ValueError, AttributeError) as exc:
-            logger.warning("Gemini primary returned no text: %s", exc)
+            logger.warning("GEMINI: returned no text, using fallback: %s", exc)
             return GeminiVisionResult(success=False, error=f"Gemini returned no text: {exc}")
 
         try:
             raw = _parse_json_content(text)
         except (json.JSONDecodeError, ValueError) as exc:
-            logger.warning("Gemini primary returned invalid JSON: %s", exc)
+            logger.warning("GEMINI: returned invalid JSON, using fallback: %s", exc)
             return GeminiVisionResult(success=False, error=f"Gemini returned invalid JSON: {exc}")
 
         # ---- Extract metadata ----
@@ -577,6 +660,114 @@ class GeminiVisionService:
             readability_quality=readability_quality,
             image_analysis=image_analysis,
             confidence_details=confidence_details,
+        )
+
+    @classmethod
+    def extract_from_text(
+        cls,
+        combined_text: str,
+        front_text: Optional[str] = None,
+        back_text: Optional[str] = None,
+    ) -> GeminiVisionResult:
+        """Extract structured product fields from OCR TEXT via Gemini.
+
+        This is the OCR-first path: Google Cloud Vision (or the Tesseract
+        fallback) has already produced ``combined_text`` from the front and
+        back images. Gemini receives only this text and returns structured
+        JSON. It never looks at the image, so it cannot invent text that OCR
+        did not read.
+
+        Parameters
+        ----------
+        combined_text : str
+            Merged OCR text across the front + back sides.
+        front_text, back_text : str, optional
+            Per-side OCR text retained for provenance/evidence. Supplying the
+            combined text is sufficient; these are only used in the prompt as
+            provenance and for building evidence strings.
+        """
+        combined_text = (combined_text or "").strip()
+        if not combined_text:
+            logger.warning("GEMINI: skipped (empty OCR text supplied)")
+            return GeminiVisionResult(
+                success=False, error="No OCR text supplied for Gemini extraction."
+            )
+
+        if not cls.is_configured():
+            return GeminiVisionResult(
+                success=False,
+                error="Gemini Vision is not configured (set GEMINI_API_KEY and VISION_MODEL).",
+            )
+
+        api_key = settings.GEMINI_API_KEY.strip()
+        model_name = settings.VISION_MODEL.strip()
+
+        provenance: list = []
+        if front_text and front_text.strip():
+            provenance.append(f"[FRONT]\n{front_text.strip()}")
+        if back_text and back_text.strip():
+            provenance.append(f"[BACK]\n{back_text.strip()}")
+
+        user_content = (
+            "The following is the raw OCR text read from a packaged food label. "
+            "Extract the fields as JSON per the schema.\n\n"
+            + ("\n\n".join(provenance) if provenance else combined_text)
+        )
+
+        logger.info("GEMINI: extraction started (text=%d chars)", len(combined_text))
+        try:
+            with httpx.Client(timeout=settings.VISION_TIMEOUT_SECONDS) as http_client:
+                client = genai.Client(
+                    api_key=api_key,
+                    http_options=types.HttpOptions(httpx_client=http_client),
+                )
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=[user_content],
+                    config=types.GenerateContentConfig(
+                        system_instruction=_TEXT_EXTRACT_PROMPT,
+                        temperature=0,
+                        response_mime_type="application/json",
+                    ),
+                )
+        except Exception as exc:
+            logger.warning("GEMINI: request failed, using fallback: %s", exc)
+            return GeminiVisionResult(success=False, error=f"Gemini API error: {exc}")
+
+        # ---- Parse response ----
+        try:
+            text = str(response.text or "")
+        except (ValueError, AttributeError) as exc:
+            logger.warning("GEMINI: returned no text, using fallback: %s", exc)
+            return GeminiVisionResult(success=False, error=f"Gemini returned no text: {exc}")
+
+        try:
+            raw = _parse_json_content(text)
+        except (json.JSONDecodeError, ValueError) as exc:
+            logger.warning("GEMINI: returned invalid JSON, using fallback: %s", exc)
+            return GeminiVisionResult(success=False, error=f"Gemini returned invalid JSON: {exc}")
+
+        product_fields = _project_fields(raw)
+
+        any_detected = any(
+            f.status == "detected" and f.value for f in product_fields.values()
+        )
+        if not any_detected:
+            logger.warning("GEMINI: returned no usable fields, using fallback")
+            return GeminiVisionResult(
+                success=False,
+                error="Gemini returned no usable field extractions.",
+            )
+
+        logger.info("GEMINI: extraction success (%d fields detected)", sum(
+            1 for f in product_fields.values() if f.status == "detected" and f.value
+        ))
+        return GeminiVisionResult(
+            success=True,
+            product_fields=product_fields,
+            raw_extraction=raw,
+            image_quality="FAIR",
+            readability_quality="MEDIUM",
         )
 
     @staticmethod
