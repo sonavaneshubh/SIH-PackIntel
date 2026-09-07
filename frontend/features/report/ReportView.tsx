@@ -17,11 +17,13 @@ import { CONFLICT_SENSITIVE_FIELDS, parseProductInformation } from '@/types/prod
 import {
   buildPopulatedFields,
   formatDate,
+  formatExtractionSource,
   getConfidence,
   getStatus,
+  parsePipelineMeta,
   ComplianceResultWithRule,
 } from './reportUtils';
-import { ProductFieldValue, ResultPill, SectionHeading, SummaryItem } from './reportComponents';
+import { ProductFieldValue, QualityItem, ResultPill, SectionHeading, SummaryItem } from './reportComponents';
 import { buildReportTitle, reportBrandName, reportCompanyName, reportProductId } from '@/lib/reporting';
 import { cn } from '@/lib/utils';
 
