@@ -76,20 +76,20 @@ export default function SettingsPage() {
             Stitch MCP & Platform Integration
           </h3>
           <div className="space-y-3 text-xs text-on-surface-variant">
-            <div className="flex justify-between items-center py-2 border-b border-outline-variant/60">
-              <span className="font-medium text-on-surface">Design System Source</span>
-              <span className="font-mono text-primary">Google Stitch MCP (Project: 6874572683199449301)</span>
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 py-2 border-b border-outline-variant/60">
+              <span className="font-medium text-on-surface shrink-0">Design System Source</span>
+              <span className="font-mono text-primary break-all">Google Stitch MCP (Project: 6874572683199449301)</span>
             </div>
-            <div className="flex justify-between items-center py-2 border-b border-outline-variant/60">
-              <span className="font-medium text-on-surface">Active Color Theme</span>
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 py-2 border-b border-outline-variant/60">
+              <span className="font-medium text-on-surface shrink-0">Active Color Theme</span>
               <span>Regulatory Integrity Interface (#1A73E8 / #005BBF)</span>
             </div>
-            <div className="flex justify-between items-center py-2 border-b border-outline-variant/60">
-              <span className="font-medium text-on-surface">Typography Engine</span>
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 py-2 border-b border-outline-variant/60">
+              <span className="font-medium text-on-surface shrink-0">Typography Engine</span>
               <span>Google Inter • Enterprise Density</span>
             </div>
-            <div className="flex justify-between items-center py-2">
-              <span className="font-medium text-on-surface">Rule Codification</span>
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 py-2">
+              <span className="font-medium text-on-surface shrink-0">Rule Codification</span>
               <span>Legal Metrology (Packaged Commodities) Act, 2011</span>
             </div>
           </div>

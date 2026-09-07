@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '@/lib/authContext';
 import {
   Inspection,
   ExtractedLabel,
@@ -24,6 +25,7 @@ import {
 
 // ─── Dashboard Stats Hook ──────────────────────────────────────────────────────
 export function useDashboardStats() {
+  const { user } = useAuth();
   const [stats, setStats] = useState<DashboardStats>({
     total: 0,
     compliant: 0,
@@ -36,6 +38,7 @@ export function useDashboardStats() {
   const [error, setError] = useState<string | null>(null);
 
   const fetchStats = useCallback(async () => {
+    if (!user) return;
     setIsLoading(true);
     setError(null);
     try {
@@ -50,23 +53,27 @@ export function useDashboardStats() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
-    fetchStats();
-  }, [fetchStats]);
+    if (user) {
+      fetchStats();
+    }
+  }, [fetchStats, user]);
 
   return { stats, isLoading, error, refetch: fetchStats };
 }
 
 // ─── Inspections List Hook ─────────────────────────────────────────────────────
 export function useMyInspections(options?: { limit?: number; offset?: number; status?: string }) {
+  const { user } = useAuth();
   const [inspections, setInspections] = useState<Inspection[]>([]);
   const [count, setCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchInspections = useCallback(async () => {
+    if (!user) return;
     setIsLoading(true);
     setError(null);
     try {
@@ -82,17 +89,20 @@ export function useMyInspections(options?: { limit?: number; offset?: number; st
     } finally {
       setIsLoading(false);
     }
-  }, [options?.limit, options?.offset, options?.status]);
+  }, [user, options?.limit, options?.offset, options?.status]);
 
   useEffect(() => {
-    fetchInspections();
-  }, [fetchInspections]);
+    if (user) {
+      fetchInspections();
+    }
+  }, [fetchInspections, user]);
 
   return { inspections, count, isLoading, error, refetch: fetchInspections };
 }
 
 // ─── Single Inspection Hook ────────────────────────────────────────────────────
 export function useInspection(inspectionId: string | null) {
+  const { user } = useAuth();
   const [inspection, setInspection] = useState<(Inspection & {
     extracted_labels: ExtractedLabel | null;
     compliance_results: ComplianceResultRow[];
@@ -103,7 +113,7 @@ export function useInspection(inspectionId: string | null) {
   const [error, setError] = useState<string | null>(null);
 
   const fetchInspection = useCallback(async () => {
-    if (!inspectionId) return;
+    if (!inspectionId || !user) return;
     setIsLoading(true);
     setError(null);
     try {
@@ -118,11 +128,13 @@ export function useInspection(inspectionId: string | null) {
     } finally {
       setIsLoading(false);
     }
-  }, [inspectionId]);
+  }, [inspectionId, user]);
 
   useEffect(() => {
-    fetchInspection();
-  }, [fetchInspection]);
+    if (inspectionId && user) {
+      fetchInspection();
+    }
+  }, [fetchInspection, inspectionId, user]);
 
   return { inspection, isLoading, error, refetch: fetchInspection };
 }

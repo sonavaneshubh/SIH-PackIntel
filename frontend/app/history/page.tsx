@@ -19,9 +19,12 @@ export default function HistoryPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PASS' | 'REVIEW' | 'FAIL'>('ALL');
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     const fetchInspections = async () => {
+      setIsLoading(true);
+      setError(null);
       try {
         const { data, error } = await supabase
           .from('inspections')
@@ -48,7 +51,7 @@ export default function HistoryPage() {
     };
 
     fetchInspections();
-  }, []);
+  }, [reloadKey]);
 
   const filtered = inspections.filter(s => {
     const matchesSearch =
@@ -63,10 +66,7 @@ export default function HistoryPage() {
   if (isLoading) {
     return (
       <AppShell pageTitle="Scan History">
-        <div className="max-w-5xl mx-auto w-full flex flex-col items-center justify-center py-12">
-          <span className="material-symbols-outlined text-4xl text-primary animate-spin mb-4">autorenew</span>
-          <p className="text-body-base text-on-surface-variant">Loading inspection history...</p>
-        </div>
+        <HistorySkeleton />
       </AppShell>
     );
   }
@@ -78,7 +78,7 @@ export default function HistoryPage() {
           <span className="material-symbols-outlined text-6xl text-error mb-4">error</span>
           <h2 className="text-headline-lg font-headline-lg text-on-surface mb-2">Failed to Load History</h2>
           <p className="text-body-base text-on-surface-variant mb-6">{error}</p>
-          <Button variant="primary" onClick={() => window.location.reload()}>Retry</Button>
+          <Button variant="primary" onClick={() => setReloadKey((k) => k + 1)}>Retry</Button>
         </div>
       </AppShell>
     );
@@ -113,7 +113,7 @@ export default function HistoryPage() {
           />
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {(['ALL', 'FAIL', 'REVIEW', 'PASS'] as const).map((st) => (
             <button
               key={st}
@@ -206,5 +206,57 @@ export default function HistoryPage() {
         </div>
       </div>
     </AppShell>
+  );
+}
+
+function HistorySkeleton() {
+  return (
+    <div className="animate-pulse" aria-hidden="true">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+        <div>
+          <div className="h-7 w-48 rounded bg-slate-200" />
+          <div className="mt-2 h-4 w-72 max-w-full rounded bg-slate-200/70" />
+        </div>
+        <div className="h-9 w-28 rounded-lg bg-slate-200" />
+      </div>
+
+      <div className="bg-surface border border-outline-variant rounded-xl p-4 mb-6 shadow-xs flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4">
+        <div className="flex items-center bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 w-full md:w-80">
+          <div className="h-4 w-full rounded bg-slate-200" />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="h-8 w-24 rounded-lg bg-slate-200" />
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-surface border border-outline-variant rounded-xl shadow-xs overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-surface-bright border-b border-outline-variant">
+                {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+                  <th key={i} className="py-3.5 px-4">
+                    <div className="h-3 w-16 rounded bg-slate-200" />
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-outline-variant/60">
+              {Array.from({ length: 6 }).map((_, row) => (
+                <tr key={row}>
+                  {[0, 1, 2, 3, 4, 5, 6].map((col) => (
+                    <td key={col} className="py-4 px-4">
+                      <div className="h-4 w-20 max-w-full rounded bg-slate-200/80" />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   );
 }

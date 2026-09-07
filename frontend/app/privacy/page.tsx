@@ -6,7 +6,7 @@ import { AppShell } from "@/components/layout/AppShell";
 export default function PrivacyPage() {
   return (
     <AppShell pageTitle="Privacy Policy">
-      <div className="max-w-3xl bg-surface border border-outline-variant rounded-xl p-8 shadow-xs">
+      <div className="max-w-3xl bg-surface border border-outline-variant rounded-xl p-4 sm:p-6 md:p-8 shadow-xs">
         <h2 className="text-display-lg font-display-lg text-on-surface mb-4">
           Privacy Policy
         </h2>

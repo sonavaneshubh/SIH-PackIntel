@@ -17,7 +17,9 @@ interface StepperProps {
 
 export function Stepper({ steps, currentIndex, className }: StepperProps) {
   return (
-    <ol className={cn('flex items-center', className)}>
+    <ol
+      className={cn('no-scrollbar flex items-center overflow-x-auto', className)}
+    >
       {steps.map((step, index) => {
         const isComplete = index < currentIndex;
         const isActive = index === currentIndex;
@@ -25,7 +27,7 @@ export function Stepper({ steps, currentIndex, className }: StepperProps) {
 
         return (
           <React.Fragment key={step.id}>
-            <li className="flex flex-1 flex-col items-center gap-2 text-center">
+            <li className="flex min-w-[84px] flex-1 flex-col items-center gap-2 text-center">
               <span
                 className={cn(
                   'flex size-8 shrink-0 items-center justify-center rounded-full border text-[13px] font-bold transition-colors',
@@ -57,7 +59,7 @@ export function Stepper({ steps, currentIndex, className }: StepperProps) {
             {index < steps.length - 1 && (
               <li
                 className={cn(
-                  'mb-6 h-0.5 flex-1 rounded-full transition-colors',
+                  'mb-6 h-0.5 min-w-8 flex-1 rounded-full transition-colors',
                   index < currentIndex ? 'bg-primary' : 'bg-outline-variant'
                 )}
                 aria-hidden="true"

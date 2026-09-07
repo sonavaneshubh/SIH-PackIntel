@@ -20,6 +20,21 @@ import {
   ProductInformation,
 } from '@/types/database';
 
+// ─── Auth User (deduped) ──────────────────────────────────────────────────────
+// A page that makes several independent Supabase queries frequently calls
+// auth.getUser() more than once during the same tick. Dedupe concurrent calls
+// into a single request to avoid duplicate network round-trips.
+let activeGetUser: ReturnType<typeof supabase.auth.getUser> | null = null;
+
+function getAuthUser() {
+  if (!activeGetUser) {
+    activeGetUser = supabase.auth.getUser().finally(() => {
+      activeGetUser = null;
+    });
+  }
+  return activeGetUser;
+}
+
 // ─── Inspection Number Generator ─────────────────────────────────────────────
 // Generates a unique inspection number: INS-YYYYMMDD-XXXXXX
 export function generateInspectionNumber(): string {
@@ -64,7 +79,7 @@ export async function createInspection(
   const {
     data: { user },
     error: authError,
-  } = await supabase.auth.getUser();
+  } = await getAuthUser();
 
   if (authError || !user) {
     return { data: null, error: 'You must be authenticated to create an inspection.' };
@@ -150,7 +165,7 @@ export async function getMyInspections(options?: {
   const {
     data: { user },
     error: authError,
-  } = await supabase.auth.getUser();
+  } = await getAuthUser();
 
   if (authError || !user) {
     return { data: [], error: 'Not authenticated.', count: 0 };
@@ -186,7 +201,7 @@ export async function getDashboardStats(): Promise<{
   const {
     data: { user },
     error: authError,
-  } = await supabase.auth.getUser();
+  } = await getAuthUser();
 
   if (authError || !user) {
     return {
@@ -241,7 +256,7 @@ export async function getMyProfile() {
   const {
     data: { user },
     error: authError,
-  } = await supabase.auth.getUser();
+  } = await getAuthUser();
 
   if (authError || !user) return { data: null, error: 'Not authenticated.' };
 
@@ -463,7 +478,7 @@ export async function uploadInspectionImage(
   const {
     data: { user },
     error: authError,
-  } = await supabase.auth.getUser();
+  } = await getAuthUser();
 
   if (authError || !user) {
     return { data: null, error: 'Not authenticated.' };
@@ -613,7 +628,7 @@ export async function saveInspectionReport(
   const {
     data: { user },
     error: authError,
-  } = await supabase.auth.getUser();
+  } = await getAuthUser();
 
   if (authError || !user) {
     return { data: null, error: 'Not authenticated.' };

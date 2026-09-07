@@ -31,7 +31,7 @@ export default function LoginPage() {
         <div>
           © 2024–2026 PackIntel • Department of Consumer Affairs, Government of India
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center justify-center gap-1 sm:justify-end">
           <span className="hover:text-on-surface transition-colors">Security & Privacy</span>
           <span>•</span>
           <span className="hover:text-on-surface transition-colors">Legal Metrology Act, 2009</span>

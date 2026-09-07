@@ -67,8 +67,8 @@ export default function AnalyticsPage() {
         </h3>
         <div className="space-y-4">
           <div>
-            <div className="flex justify-between text-xs font-semibold text-on-surface mb-1">
-              <span>Rule 6(1)(d) — Ambiguous Packing Date Format</span>
+            <div className="flex justify-between gap-3 text-xs font-semibold text-on-surface mb-1">
+              <span className="min-w-0 flex-1 sm:flex-none">Rule 6(1)(d) — Ambiguous Packing Date Format</span>
               <span>48%</span>
             </div>
             <div className="w-full bg-surface-container-highest h-2 rounded-full overflow-hidden">
@@ -77,8 +77,8 @@ export default function AnalyticsPage() {
           </div>
 
           <div>
-            <div className="flex justify-between text-xs font-semibold text-on-surface mb-1">
-              <span>Rule 6(1)(e) — Missing Inclusive of all taxes text in MRP</span>
+            <div className="flex justify-between gap-3 text-xs font-semibold text-on-surface mb-1">
+              <span className="min-w-0 flex-1 sm:flex-none">Rule 6(1)(e) — Missing Inclusive of all taxes text in MRP</span>
               <span>28%</span>
             </div>
             <div className="w-full bg-surface-container-highest h-2 rounded-full overflow-hidden">
@@ -87,8 +87,8 @@ export default function AnalyticsPage() {
           </div>
 
           <div>
-            <div className="flex justify-between text-xs font-semibold text-on-surface mb-1">
-              <span>Rule 6(1)(c) — Non-standard metric units in Net Quantity</span>
+            <div className="flex justify-between gap-3 text-xs font-semibold text-on-surface mb-1">
+              <span className="min-w-0 flex-1 sm:flex-none">Rule 6(1)(c) — Non-standard metric units in Net Quantity</span>
               <span>16%</span>
             </div>
             <div className="w-full bg-surface-container-highest h-2 rounded-full overflow-hidden">
@@ -97,8 +97,8 @@ export default function AnalyticsPage() {
           </div>
 
           <div>
-            <div className="flex justify-between text-xs font-semibold text-on-surface mb-1">
-              <span>Rule 6(1)(h) — Missing Consumer Care phone or email</span>
+            <div className="flex justify-between gap-3 text-xs font-semibold text-on-surface mb-1">
+              <span className="min-w-0 flex-1 sm:flex-none">Rule 6(1)(h) — Missing Consumer Care phone or email</span>
               <span>8%</span>
             </div>
             <div className="w-full bg-surface-container-highest h-2 rounded-full overflow-hidden">

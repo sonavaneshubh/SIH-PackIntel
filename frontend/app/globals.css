@@ -30,6 +30,32 @@
   }
 }
 
+@layer utilities {
+  /* Hide scrollbars while keeping scroll functionality */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@keyframes dropdown-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.dropdown-pop {
+  animation: dropdown-pop 0.18s ease-out both;
+}
+
 .material-symbols-outlined {
   font-family: 'Material Symbols Outlined';
   font-weight: normal;
@@ -184,6 +210,31 @@
 
 .scanner-status-flash {
   animation: scanner-status-flash 0.9s ease-out both;
+}
+
+/* ── PackIntel Homepage entrance animations ─────────────── */
+@keyframes home-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.home-fade-up {
+  animation: home-fade-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-fade-up,
+  .scanner-scan-line,
+  .scanner-border-active,
+  .pulsing-dot {
+    animation: none !important;
+  }
 }
 
 @media print {
