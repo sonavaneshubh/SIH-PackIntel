@@ -116,6 +116,7 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
 
     # ---- Gemini Vision PRIMARY extraction (bypasses OCR when successful) ----
     gemini_primary_used = False
+    gemini_primary_error: Optional[str] = None
     gemini_product_fields: Optional[Dict[str, ProductField]] = None
     if settings.GEMINI_PRIMARY_ENABLED and sides:
         logger.info("SCAN: Gemini primary enabled")
@@ -135,11 +136,13 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
                     _gemini_result.readability_quality,
                 )
             else:
+                gemini_primary_error = _gemini_result.error or "Gemini extraction failed"
                 logger.warning(
                     "SCAN: Gemini extraction failed, using OCR fallback: %s",
-                    _gemini_result.error,
+                    gemini_primary_error,
                 )
         except Exception as exc:
+            gemini_primary_error = str(exc)
             logger.warning(
                 "SCAN: Gemini extraction failed, using OCR fallback: %s", exc
             )
@@ -195,7 +198,7 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
 
     # ---- Extract product information -------------------------------------------
     vision_used = False
-    vision_error: Optional[str] = None
+    vision_error: Optional[str] = gemini_primary_error
     extraction_conf: Dict[str, Any] = {"overall": 0.0}
 
     if gemini_primary_used and gemini_product_fields is not None:
@@ -264,7 +267,7 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
                 extraction_source = "ocr+vision" if front_ocr_text.strip() else "vision"
             except VisionExtractionError as exc:
                 # Vision is an optional fallback: never destroy usable OCR results.
-                vision_error = str(exc)
+                vision_error = vision_error or str(exc)
                 logger.warning("Vision fallback unavailable: %s", exc)
                 final_info = ocr_info.as_dict()
                 extraction_source = "ocr"
@@ -313,6 +316,11 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
                 "Upload a clearer image."
                 if quality_reason
                 else "No readable package-label information was detected. Upload a clearer image."
+            )
+        if vision_error and settings.GEMINI_PRIMARY_ENABLED:
+            report = (
+                f"{report} Gemini vision extraction was unavailable"
+                f" ({(vision_error.rstrip('.') or 'no information returned')})."
             )
         message = f"Scan completed. {report}"
     else:
