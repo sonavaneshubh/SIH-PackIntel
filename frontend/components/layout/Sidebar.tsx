@@ -274,7 +274,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               <span>Support</span>
             </Link>
             <button
-              onClick={handleSignOut}
+              onClick={() => { onClose(); signOut(); }}
               className="w-full flex items-center gap-3 text-slate-400 px-3 py-2.5 rounded-lg hover:bg-[#111c20] hover:text-red-300 transition-all duration-75 text-[13px] font-semibold text-left cursor-pointer"
             >
               <span className="material-symbols-outlined text-[18px]">
@@ -287,4 +287,4 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       </aside>
     </>
   );
-});
+}
