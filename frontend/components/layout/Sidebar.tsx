@@ -43,13 +43,6 @@ const PRIMARY_NAV: NavItem[] = [
     matchHint: (p) => p.startsWith("/scan"),
   },
   {
-    label: "Scan History",
-    href: "/history",
-    icon: "history",
-    prefetch: true,
-    matchHint: (p) => p === "/history",
-  },
-  {
     label: "Recent Inspections",
     href: "/recent-inspections",
     icon: "query_stats",
@@ -61,13 +54,6 @@ const PRIMARY_NAV: NavItem[] = [
     href: "/#high-priority",
     icon: "warning",
     matchHint: () => false,
-  },
-  {
-    label: "Compliance Results",
-    href: "/results",
-    icon: "assignment_turned_in",
-    prefetch: true,
-    matchHint: (p) => p === "/results",
   },
   {
     label: "Rule Database",
