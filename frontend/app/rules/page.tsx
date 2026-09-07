@@ -58,7 +58,7 @@ export default function RulesPage() {
     <AppShell pageTitle="Legal Metrology Rule Database">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
         <div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <h2 className="text-display-lg-mobile md:text-display-lg font-display-lg text-on-surface">
               Legal Metrology Rule Database
             </h2>
@@ -167,7 +167,7 @@ export default function RulesPage() {
               {rule.description}
             </p>
 
-            <div className="bg-surface-container-low p-3 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+            <div className="bg-surface-container-low p-3 rounded-lg flex items-center justify-between text-xs">
               <span className="text-on-surface-variant">
                 Standard Statutory Penalty:
               </span>

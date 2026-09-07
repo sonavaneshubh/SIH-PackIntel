@@ -52,10 +52,10 @@ export default function ResetPasswordPage() {
   return (
     <div className="min-h-screen bg-surface-container-low flex flex-col justify-between items-center p-4 sm:p-6 antialiased">
       {/* Top Header */}
-      <header className="w-full max-w-5xl py-2 flex items-center justify-between border-b border-outline-variant/60 text-xs text-on-surface-variant">
-        <div className="flex items-center gap-2 font-medium">
-          <span className="w-2 h-2 rounded-full bg-green-500" />
-          <span>Legal Metrology Compliance Enforcement Portal</span>
+      <header className="w-full max-w-5xl py-2 flex flex-wrap items-center justify-between gap-2 border-b border-outline-variant/60 text-xs text-on-surface-variant">
+        <div className="flex min-w-0 items-center gap-2 font-medium">
+          <span className="w-2 h-2 shrink-0 rounded-full bg-green-500" />
+          <span className="truncate">Legal Metrology Compliance Enforcement Portal</span>
         </div>
         <div className="text-[11px] font-mono text-outline">
           Password Credential Management

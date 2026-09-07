@@ -21,12 +21,6 @@ export function DashboardView() {
   const total = stats.total || 0;
   const complianceRate = total > 0 ? Math.round((stats.compliant / total) * 100) : 0;
   const weeklyChange = weeklyChangePercent(inspections);
-  // small sparkline series for KPI cards (last 8 days)
-  const series8 = buildActivitySeries(inspections, 8);
-  const sparkTotal = series8.map((s) => s.count);
-  const sparkPending = buildActivitySeries(inspections.filter((it) => (it.overall_result || '') === 'review'), 8).map((s) => s.count);
-  const sparkCompliant = buildActivitySeries(inspections.filter((it) => (it.overall_result || '') === 'pass'), 8).map((s) => s.count);
-  const sparkHighPriority = buildActivitySeries(inspections.filter((it) => (it.risk_score ?? 0) >= 76), 8).map((s) => s.count);
 
   if (loading) {
     return (
@@ -52,7 +46,7 @@ export function DashboardView() {
         )}
 
         {/* Metric cards */}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard
             title="Total Scans"
             value={total}
@@ -60,7 +54,6 @@ export function DashboardView() {
             description={weeklyChange == null ? 'Total inspections recorded' : `${Math.abs(weeklyChange)}% from last 7 days`}
             icon="package_2"
             tone="green"
-            sparkData={sparkTotal}
           />
           <MetricCard
             title="Pending Review"
@@ -68,7 +61,6 @@ export function DashboardView() {
             description="Requires attention"
             icon="error"
             tone="orange"
-            sparkData={sparkPending}
           />
           <MetricCard
             title="Compliance Rate"
@@ -76,7 +68,6 @@ export function DashboardView() {
             description={`${stats.compliant} of ${total} compliant`}
             icon="shield"
             tone="purple"
-            sparkData={sparkCompliant}
           />
           <MetricCard
             title="Immediate Attention"
@@ -84,22 +75,25 @@ export function DashboardView() {
             description="Critical violations found"
             icon="report"
             tone="red"
-            sparkData={sparkHighPriority}
           />
         </div>
 
-        {/* Main content: left column + right rail */}
-        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
-          <div className="flex min-w-0 flex-col gap-4">
-            <InspectionActivityCard items={inspections} />
-            <RecentInspectionsCard items={inspections.slice(0, 4)} />
-          </div>
+            {/* Main content: left column + right rail */}
+            <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
+              <div className="flex min-w-0 flex-col gap-4">
+                <InspectionActivityCard items={inspections} />
+                <RecentInspectionsCard items={inspections.slice(0, 4)} />
+              </div>
 
-          <div className="flex min-w-0 flex-col gap-4">
-            <StatusDistributionCard stats={stats} />
-            <ComplianceStatusCard complianceRate={complianceRate} />
-          </div>
-        </div>
+              <div className="flex min-w-0 flex-col gap-4">
+                <StatusDistributionCard stats={stats} />
+                <AllSetCard />
+                <QuickActionsCard />
+                <HighlightsCard stats={stats} complianceRate={complianceRate} weeklyChange={weeklyChange} />
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </AppShell>
   );

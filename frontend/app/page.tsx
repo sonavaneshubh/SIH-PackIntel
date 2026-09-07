@@ -1,5 +1,5 @@
-import { DashboardView } from '@/features/dashboard/DashboardView';
+import { HomepageView } from '@/features/home/HomepageView';
 
 export default function HomePage() {
-  return <DashboardView />;
+  return <HomepageView />;
 }

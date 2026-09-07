@@ -9,6 +9,11 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  // Barrel-file optimization: lucide-react is imported per-icon in scan flows;
+  // this keeps those icons from bloating unrelated route bundles.
+  experimental: {
+    optimizePackageImports: ['lucide-react'],
+  },
 };
 
 export default nextConfig;

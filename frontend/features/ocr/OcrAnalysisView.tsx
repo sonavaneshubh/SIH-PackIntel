@@ -309,7 +309,7 @@ export function OcrAnalysisView() {
       )}
 
       {/* Action Navigation Footer */}
-      <div className="flex justify-between items-center pt-4 border-t border-outline-variant">
+      <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 pt-4 border-t border-outline-variant">
         <Button
           variant="outline"
           icon="arrow_back"
