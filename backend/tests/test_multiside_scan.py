@@ -103,9 +103,9 @@ def multipart_scan(front: Image.Image, back: Image.Image | None = None, **form):
 # ---------------------------------------------------------------------------
 
 def test_valid_food_package_multipart_completes(monkeypatch):
-    from tests.conftest import stub_ocr_space
+    from tests.conftest import stub_ocr
 
-    stub_ocr_space(
+    stub_ocr(
         monkeypatch,
         "MANUFACTURER Acme Foods, Delhi\nPRODUCT Rice\nNet Quantity 5 kg\n"
         "MRP Rs. 499\nMFD 01/2026\nCustomer Care: 1800-123-456",
@@ -124,7 +124,7 @@ def test_valid_food_package_multipart_completes(monkeypatch):
     assert data["success"] is True
     assert data["images_processed"] == 1
     assert data["front_side"]["label"] == "front"
-    assert data["front_side"]["ocr_engine"] == "ocr_space"
+    assert data["front_side"]["ocr_engine"] == "google_vision"
     assert data["product_information"]["net_quantity"]["value"] == "5 kg"
     assert data["detection"] is not None
     assert isinstance(data["detection"]["is_food_package"], bool)
@@ -136,9 +136,9 @@ def test_valid_food_package_multipart_completes(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_person_image_never_aborts(monkeypatch):
-    from tests.conftest import stub_ocr_space
+    from tests.conftest import stub_ocr
 
-    stub_ocr_space(monkeypatch, "")
+    stub_ocr(monkeypatch, "")
 
     response = multipart_scan(_person_photo())
 
@@ -158,9 +158,9 @@ def test_person_image_never_aborts(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_laptop_image_never_aborts(monkeypatch):
-    from tests.conftest import stub_ocr_space
+    from tests.conftest import stub_ocr
 
-    stub_ocr_space(monkeypatch, "")
+    stub_ocr(monkeypatch, "")
 
     response = multipart_scan(_laptop_photo())
 
@@ -177,9 +177,9 @@ def test_laptop_image_never_aborts(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_blurry_package_continues_despite_quality_warning(monkeypatch):
-    from tests.conftest import stub_ocr_space
+    from tests.conftest import stub_ocr
 
-    stub_ocr_space(
+    stub_ocr(
         monkeypatch,
         "PRODUCT Rice\nNet Quantity 5 kg\nMRP Rs. 499\nMFD 01/2026",
     )
@@ -211,7 +211,7 @@ class _TwoSideOCRStub:
                     "Manufacturer: Acme Foods",
         "layout_text": "",
         "confidence": 92.0,
-        "engine": "ocr_space",
+        "engine": "google_vision",
         "regions": [],
         "layout_regions": [],
         "layout_region_count": 0,
@@ -222,7 +222,7 @@ class _TwoSideOCRStub:
         "raw_text": "",
         "layout_text": "",
         "confidence": 0.0,
-        "engine": "ocr_space",
+        "engine": "google_vision",
         "regions": [],
         "layout_regions": [],
         "layout_region_count": 0,
@@ -267,9 +267,9 @@ def test_front_good_back_bad_still_extracts(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_no_back_image_single_side(monkeypatch):
-    from tests.conftest import stub_ocr_space
+    from tests.conftest import stub_ocr
 
-    stub_ocr_space(
+    stub_ocr(
         monkeypatch,
         "PRODUCT Rice\nMRP Rs. 149\nNet Quantity 500 g",
     )
@@ -290,9 +290,9 @@ def test_no_back_image_single_side(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_empty_image_structured_response(monkeypatch):
-    from tests.conftest import stub_ocr_space
+    from tests.conftest import stub_ocr
 
-    stub_ocr_space(monkeypatch, "")
+    stub_ocr(monkeypatch, "")
 
     response = multipart_scan(_empty_image())
 
@@ -310,11 +310,11 @@ def test_empty_image_structured_response(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_non_food_package_flagged_but_scan_continues(monkeypatch):
-    from tests.conftest import stub_ocr_space
+    from tests.conftest import stub_ocr
 
     # Even when OCR hallucinates text-like output, a non-food classification
     # must not abort the pipeline.
-    stub_ocr_space(monkeypatch, "COLA CO BOTTLE 1 L\nMRP Rs. 40")
+    stub_ocr(monkeypatch, "COLA CO BOTTLE 1 L\nMRP Rs. 40")
 
     response = multipart_scan(_non_food_object())
 

@@ -77,13 +77,15 @@ function isAfterBackCapture(state: ScannerState): boolean {
 
 export function NewScanView() {
   const router = useRouter();
-  const { state, runFullPipeline } = useScanPipeline();
+  const { state, runFullPipeline, resetPipeline } = useScanPipeline();
   const [cameraState, setCameraState] = useState<ScannerState>('initializing');
   const [frontCaptured, setFrontCaptured] = useState(false);
   const [backCaptured, setBackCaptured] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [frontUpload, setFrontUpload] = useState<UploadImage | null>(null);
   const [backUpload, setBackUpload] = useState<UploadImage | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [scannerInstance, setScannerInstance] = useState(0);
   const frontInputRef = useRef<HTMLInputElement>(null);
   const backInputRef = useRef<HTMLInputElement>(null);
 
@@ -94,10 +96,16 @@ export function NewScanView() {
     async (frontFile: File, backFile?: File) => {
       const result = await runFullPipeline(frontFile, CAPTURE_FORM, backFile);
       if (!result.success) {
-        setCameraState('camera_error');
+        setScanError(result.error || 'Scan failed. Please try again.');
+        resetPipeline();
+        // Restore the scanner so the operator can re-scan or upload again
+        // instead of being stuck on a frozen "processing" view.
+        setScannerInstance((instance) => instance + 1);
+      } else {
+        setScanError(null);
       }
     },
-    [runFullPipeline]
+    [runFullPipeline, resetPipeline]
   );
 
   const handleCaptureComplete = useCallback(
@@ -198,6 +206,7 @@ export function NewScanView() {
               />
 
               <CameraScanner
+                key={scannerInstance}
                 onCaptureComplete={handleCaptureComplete}
                 onSideCaptured={handleSideCaptured}
                 onCameraStateChange={handleCameraStateChange}
@@ -250,9 +259,9 @@ export function NewScanView() {
               />
             )}
 
-            {state.error && (
+            {scanError && (
               <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                {state.error}
+                {scanError}
               </p>
             )}
           </div>

@@ -34,6 +34,8 @@ export interface CameraScannerProps {
 
 const TURN_DELAY_MS = 1400;
 const MIN_CAPTURE_WIDTH = 320;
+const CAMERA_START_TIMEOUT_MS = 12000;
+const CAMERA_VIDEO_PLAY_TIMEOUT_MS = 6000;
 
 export const STATUS_LABELS: Record<ScannerState, string> = {
   initializing: 'Initializing camera',
@@ -87,6 +89,21 @@ function toCameraFailure(error: unknown): CameraFailureInfo {
   return { reason, message: messages[reason] };
 }
 
+function settledWithin(promise: Promise<void>, ms: number): Promise<boolean> {
+  return new Promise<boolean>((resolve, reject) => {
+    const timer = window.setTimeout(() => resolve(false), ms);
+    promise
+      .then(() => {
+        window.clearTimeout(timer);
+        resolve(true);
+      })
+      .catch((error: unknown) => {
+        window.clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
+
 const isScanningOverlay = (state: ScannerState) =>
   state === 'capturing_front' || state === 'capturing_back' || state === 'processing';
 
@@ -104,6 +121,8 @@ export function CameraScanner({
   const transitionTimerRef = useRef<number | null>(null);
   const frontSideRef = useRef<CaptureSideResult | null>(null);
   const scanSideRef = useRef<ScannerPhase>('front');
+  const cameraAttemptRef = useRef(0);
+  const cameraStartTimerRef = useRef<number | null>(null);
 
   const [phase, setPhaseState] = useState<ScannerState>('initializing');
   const [cameraError, setCameraErrorInfo] = useState<CameraFailureInfo | null>(null);
@@ -135,6 +154,7 @@ export function CameraScanner({
 
   const startCamera = useCallback(
     async (firstAttempt: boolean, attempt = 0) => {
+      const attemptId = ++cameraAttemptRef.current;
       setCameraErrorInfo(null);
       setPhase(firstAttempt ? 'permission_required' : 'initializing');
 
@@ -145,13 +165,34 @@ export function CameraScanner({
         return;
       }
       if (typeof window !== 'undefined' && window.isSecureContext === false) {
-        const info = toCameraFailure({ name: 'SecurityError' } as DOMException);
-        setCameraErrorInfo({ ...info, reason: 'insecure_context' });
+        setCameraErrorInfo(toCameraFailure({ name: 'SecurityError', message: '' } as DOMException));
         setPhase('camera_error');
         return;
       }
 
       stopStream();
+
+      // Never stall forever on a pending permission prompt or a silent camera
+      // failure: surface an actionable error with a retry after a timeout.
+      if (cameraStartTimerRef.current !== null) window.clearTimeout(cameraStartTimerRef.current);
+      cameraStartTimerRef.current = window.setTimeout(() => {
+        if (cameraAttemptRef.current !== attemptId) return;
+        setCameraErrorInfo({
+          reason: 'not_readable',
+          message:
+            'The camera did not start in time. Make sure no other application is using it and that camera is enabled on this device.',
+        });
+        setPhase('camera_error');
+      }, CAMERA_START_TIMEOUT_MS);
+
+      // Best-effort: keep the preview muted/playsInline even if React never
+      // re-applies the DOM attributes in time on some browsers.
+      if (videoRef.current) {
+        videoRef.current.muted = true;
+        videoRef.current.playsInline = true;
+        videoRef.current.autoplay = true;
+      }
+
       try {
         let stream: MediaStream;
         try {
@@ -164,11 +205,18 @@ export function CameraScanner({
             audio: false,
           });
         } catch (error) {
-          if ((error as DOMException).name !== 'OverconstrainedError') throw error;
+          if ((error as DOMException)?.name !== 'OverconstrainedError') throw error;
           stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         }
 
+        // A newer start attempt (or unmount) superseded this one.
+        if (cameraAttemptRef.current !== attemptId) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
         if (stream.getVideoTracks().length === 0) {
+          stream.getTracks().forEach((track) => track.stop());
           const info = toCameraFailure({ name: 'NotFoundError' } as DOMException);
           setCameraErrorInfo(info);
           setPhase('camera_error');
@@ -179,18 +227,37 @@ export function CameraScanner({
         const video = videoRef.current;
         if (video) {
           video.srcObject = stream;
-          await video.play().catch(() => {
-            const info = toCameraFailure({ name: 'unknown' } as DOMException);
+          video.muted = true;
+          video.playsInline = true;
+          const played = await settledWithin(video.play(), CAMERA_VIDEO_PLAY_TIMEOUT_MS);
+          if (!played) {
+            if (cameraAttemptRef.current !== attemptId) return;
+            if (cameraStartTimerRef.current !== null) {
+              window.clearTimeout(cameraStartTimerRef.current);
+              cameraStartTimerRef.current = null;
+            }
+            const info = toCameraFailure({ name: 'NotReadableError' } as DOMException);
             setCameraErrorInfo({
               ...info,
-              message: 'The camera preview could not be played. Try again.',
+              message: 'The camera preview could not be played. Reload the page and try again.',
             });
             setPhase('camera_error');
-          });
+            return;
+          }
+        }
+
+        if (cameraAttemptRef.current !== attemptId) {
+          stopStream();
+          return;
+        }
+        if (cameraStartTimerRef.current !== null) {
+          window.clearTimeout(cameraStartTimerRef.current);
+          cameraStartTimerRef.current = null;
         }
         setScanSide('front');
         setPhase('camera_ready');
       } catch (error) {
+        if (cameraAttemptRef.current !== attemptId) return;
         const info = toCameraFailure(error);
         if (info.reason === 'not_readable' && attempt < MAX_CAMERA_RETRIES) {
           if (cameraRetryTimerRef.current !== null) window.clearTimeout(cameraRetryTimerRef.current);
@@ -198,6 +265,10 @@ export function CameraScanner({
             void startCamera(false, attempt + 1);
           }, CAMERA_RETRY_DELAY_MS);
           return;
+        }
+        if (cameraStartTimerRef.current !== null) {
+          window.clearTimeout(cameraStartTimerRef.current);
+          cameraStartTimerRef.current = null;
         }
         setCameraErrorInfo(info);
         setPhase(info.reason === 'not_allowed' ? 'permission_denied' : 'camera_error');
@@ -211,9 +282,38 @@ export function CameraScanner({
     return () => {
       if (transitionTimerRef.current !== null) window.clearTimeout(transitionTimerRef.current);
       if (cameraRetryTimerRef.current !== null) window.clearTimeout(cameraRetryTimerRef.current);
+      if (cameraStartTimerRef.current !== null) {
+        window.clearTimeout(cameraStartTimerRef.current);
+        cameraStartTimerRef.current = null;
+      }
       stopStream();
     };
   }, [startCamera, stopStream]);
+
+  // Surface mid-session camera failures (cable pull, device disconnect, etc.)
+  // with an actionable error + retry instead of a frozen black preview.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const onVideoError = () => {
+      if (cameraAttemptRef.current === 0) return;
+      const current = phaseRef.current;
+      const idleOrResolved =
+        current === 'camera_error' ||
+        current === 'permission_denied' ||
+        current === 'completed' ||
+        current === 'permission_required' ||
+        current === 'initializing';
+      if (idleOrResolved) return;
+      setCameraErrorInfo({
+        reason: 'not_readable',
+        message: 'The camera stream was interrupted. Try the camera again or upload package images instead.',
+      });
+      setPhase('camera_error');
+    };
+    video.addEventListener('error', onVideoError);
+    return () => video.removeEventListener('error', onVideoError);
+  }, [setPhase]);
 
   useEffect(() => {
     if (frontSide) frontSideRef.current = frontSide;
@@ -246,7 +346,12 @@ export function CameraScanner({
         setPhase(side === 'front' ? 'camera_ready' : 'turn_package');
         return;
       }
-      const clientQuality = assessCaptureQuality(video, analysisCanvas);
+      let clientQuality: CaptureSideResult['clientQuality'];
+      try {
+        clientQuality = assessCaptureQuality(video, analysisCanvas);
+      } catch {
+        clientQuality = { sharpness: 0, lighting: 0, centering: 0 };
+      }
       setPhase(side === 'front' ? 'capturing_front' : 'capturing_back');
 
       canvas.width = video.videoWidth;

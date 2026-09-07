@@ -33,6 +33,7 @@ from app.services.vision_service import (
     VisionService,
     should_use_vision_fallback,
 )
+from app.services.gemini_vision import GeminiVisionService, _average_detected_confidence
 from app.api.dependencies import get_current_user
 
 router = APIRouter()
@@ -43,7 +44,7 @@ _OCR_FAILURE_TEMPLATE: Dict[str, Any] = {
     "text": "",
     "raw_text": "",
     "confidence": 0.0,
-    "engine": "ocr_space",
+    "engine": "google_vision",
     "lines": [],
     "regions": [],
     "layout_regions": [],
@@ -62,13 +63,15 @@ async def scan_status(current_user: dict = Depends(get_current_user)):
     The frontend uses this to decide whether the two-image scanner path is
     available. API keys are never reflected here.
     """
-    from app.services.ocr_space_service import ocr_space_enabled
+    from app.services.ocr_service import get_google_vision_diagnostics
+
+    vision_status = get_google_vision_diagnostics()
 
     return {
         "status": "ready",
         "pipeline": "detection -> quality -> preprocessing -> ocr -> extraction -> compliance",
-        "ocr_engine": "ocr_space",
-        "ocr_configured": ocr_space_enabled(),
+        "ocr_engine": "google_vision",
+        "ocr_configured": vision_status["available"],
         "multi_image": True,
         "food_package_confidence_threshold": settings.FOOD_PACKAGE_CONFIDENCE_THRESHOLD,
         "max_image_size_mb": settings.MAX_IMAGE_SIZE_MB,
@@ -111,13 +114,58 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
     front_layout_text = ""
     front_detection: Optional[ImageDetection] = None
 
+    # ---- Gemini Vision PRIMARY extraction (bypasses OCR when successful) ----
+    gemini_primary_used = False
+    gemini_product_fields: Optional[Dict[str, ProductField]] = None
+    if settings.GEMINI_PRIMARY_ENABLED and sides:
+        logger.info("SCAN: Gemini primary enabled")
+        front_side_input = sides[0]
+        pil_img = front_side_input.get("pil_image")
+        logger.info("SCAN: Gemini extraction started")
+        try:
+            _gemini_result = GeminiVisionService.extract(
+                front_side_input["image_ref"], pil_img
+            )
+            if _gemini_result.success:
+                gemini_primary_used = True
+                gemini_product_fields = _gemini_result.product_fields
+                logger.info(
+                    "SCAN: Gemini extraction success (quality=%s, readability=%s)",
+                    _gemini_result.image_quality,
+                    _gemini_result.readability_quality,
+                )
+            else:
+                logger.warning(
+                    "SCAN: Gemini extraction failed, using OCR fallback: %s",
+                    _gemini_result.error,
+                )
+        except Exception as exc:
+            logger.warning(
+                "SCAN: Gemini extraction failed, using OCR fallback: %s", exc
+            )
+
     for index, side in enumerate(sides):
         label = side["label"]
         pil_image = side.get("pil_image")
 
         detection, quality = _detect_and_qualify(side, warnings)
 
-        ocr_result = _run_ocr(side["image_ref"])
+        if gemini_primary_used:
+            ocr_result = {
+                "engine": "gemini_vision",
+                "confidence": 0.0,
+                "raw_text": "",
+                "text": "",
+                "lines": [],
+                "regions": [],
+                "layout_regions": [],
+                "layout_text": "",
+                "layout_region_count": 0,
+                "image_quality": "usable",
+                "quality_reason": None,
+            }
+        else:
+            ocr_result = _run_ocr(side["image_ref"])
         if index == 0:
             front_result = ocr_result
             front_detection = detection
@@ -145,55 +193,81 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
             )
         )
 
-    # ---- Combine OCR text from every side (front then back), plus layout.
-    extraction_text = _combine_ocr_text(front_ocr_text, front_layout_text)
-    for extra_side in per_side[1:]:
-        extraction_text = _combine_ocr_text(
-            extraction_text, extra_side.ocr_raw_text or "", extra_side.layout_text or ""
-        )
-
-    ocr_confidence = float(front_result.get("confidence") or 0.0)
-    ocr_failed = not bool(front_ocr_text.strip())
-    quality_reason = front_result.get("quality_reason")
-
-    logger.info(
-        "OCR completed: engine=%s, sides=%d, text_len=%d, confidence=%s, "
-        "quality=%s, failed=%s",
-        front_result.get("engine", "unknown"),
-        len(per_side),
-        len(extraction_text),
-        ocr_confidence,
-        front_result.get("image_quality", "unknown"),
-        ocr_failed,
-    )
-
-    # ---- Canonical OCR extraction (per-field value/status/confidence/source).
-    logger.info("Analysis started (field extraction)")
-    ocr_info, extraction_conf = AIService.extract_product_information(
-        extraction_text, ocr_confidence=ocr_confidence
-    )
-
+    # ---- Extract product information -------------------------------------------
     vision_used = False
     vision_error: Optional[str] = None
-    extraction_source = "ocr"
-    final_info = ocr_info.as_dict()
-    front_image_ref = sides[0]["image_ref"] if sides else None
-    if (
-        settings.ENABLE_VISION_FALLBACK
-        and front_image_ref
-        and should_use_vision_fallback(ocr_confidence, ocr_failed, ocr_info)
-    ):
+    extraction_conf: Dict[str, Any] = {"overall": 0.0}
+
+    if gemini_primary_used and gemini_product_fields is not None:
+        # Gemini primary extraction succeeded — bypass OCR extraction pipeline.
+        final_info: Dict[str, ProductField] = {
+            k: gemini_product_fields[k] for k in PRODUCT_FIELDS
+        }
+        extraction_source = "gemini_vision"
+        vision_used = True
+        ocr_confidence = _average_detected_confidence(gemini_product_fields)
+        extraction_conf = {"overall": ocr_confidence}
+        quality_reason = None
+        logger.info("Using Gemini primary extraction results")
+    else:
+        logger.info("SCAN: OCR fallback started")
+        # ---- Combine OCR text from every side (front then back), plus layout.
+        extraction_text = _combine_ocr_text(front_ocr_text, front_layout_text)
+        for extra_side in per_side[1:]:
+            extraction_text = _combine_ocr_text(
+                extraction_text, extra_side.ocr_raw_text or "", extra_side.layout_text or ""
+            )
+
+        ocr_confidence = float(front_result.get("confidence") or 0.0)
+        ocr_failed = not bool(front_ocr_text.strip())
+        quality_reason = front_result.get("quality_reason")
+
+        logger.info(
+            "OCR completed: engine=%s, sides=%d, text_len=%d, confidence=%s, "
+            "quality=%s, failed=%s",
+            front_result.get("engine", "unknown"),
+            len(per_side),
+            len(extraction_text),
+            ocr_confidence,
+            front_result.get("image_quality", "unknown"),
+            ocr_failed,
+        )
+
+        # ---- Canonical OCR extraction (per-field value/status/confidence/source).
+        logger.info("Analysis started (field extraction)")
+        ocr_info, extraction_conf = AIService.extract_product_information(
+            extraction_text, ocr_confidence=ocr_confidence
+        )
+
+        # Apply deterministic extraction improvements (addresses, dates, unit sale
+        # price) from the dedicated product extractor layer. These only fill fields
+        # the regex extraction could not, so they never regress detected values.
+        from app.services.product_extractor import apply_pipeline_overlays
+
         try:
-            vision_fields = VisionService.extract(front_image_ref)
-            final_info = merge_sources(ocr_info, vision_fields)
-            vision_used = True
-            extraction_source = "ocr+vision" if front_ocr_text.strip() else "vision"
-        except VisionExtractionError as exc:
-            # Vision is an optional fallback: never destroy usable OCR results.
-            vision_error = str(exc)
-            logger.warning("Vision fallback unavailable: %s", exc)
-            final_info = ocr_info.as_dict()
-            extraction_source = "ocr"
+            ocr_info = apply_pipeline_overlays(ocr_info, extraction_text)
+        except Exception as exc:  # pragma: no cover - defense in depth
+            logger.warning("Product-extractor overlay failed, keeping base output: %s", exc)
+
+        extraction_source = "ocr"
+        final_info = ocr_info.as_dict()
+        front_image_ref = sides[0]["image_ref"] if sides else None
+        if (
+            settings.ENABLE_VISION_FALLBACK
+            and front_image_ref
+            and should_use_vision_fallback(ocr_confidence, ocr_failed, ocr_info)
+        ):
+            try:
+                vision_fields = VisionService.extract(front_image_ref)
+                final_info = merge_sources(ocr_info, vision_fields)
+                vision_used = True
+                extraction_source = "ocr+vision" if front_ocr_text.strip() else "vision"
+            except VisionExtractionError as exc:
+                # Vision is an optional fallback: never destroy usable OCR results.
+                vision_error = str(exc)
+                logger.warning("Vision fallback unavailable: %s", exc)
+                final_info = ocr_info.as_dict()
+                extraction_source = "ocr"
 
     product_information: Dict[str, ProductField] = {
         key: final_info[key] for key in PRODUCT_FIELDS
@@ -208,13 +282,22 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
     ]
     has_information = bool(detected) and (not unusable_quality or vision_used)
 
+    logger.info("Compliance analysis started")
+    compliance = ComplianceService.evaluate_compliance(
+        inspection_id=inspection_id,
+        product_information=product_information,
+        is_imported=bool(meta.is_imported),
+        image_quality=front_result.get("image_quality", "usable"),
+    )
+    logger.info("Compliance analysis completed: overall=%s, score=%d", compliance.overall_result, compliance.compliance_score)
+    overall_result = compliance.overall_result
+    score = compliance.compliance_score
+    compliance_score = compliance.compliance_score
+    risk_score = compliance.risk_score
+    compliance_results = compliance.results
+
     if not has_information:
         result_status = "insufficient_information"
-        overall_result = "review"
-        score = 0
-        compliance_score = 0
-        risk_score = 0
-        compliance_results: List[ComplianceResult] = []
         if ocr_failed:
             reason = quality_reason or "OCR could not read the label image."
             report = (
@@ -233,18 +316,6 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
             )
         message = f"Scan completed. {report}"
     else:
-        logger.info("Compliance analysis started")
-        compliance = ComplianceService.evaluate_compliance(
-            inspection_id=inspection_id,
-            product_information=product_information,
-            is_imported=bool(meta.is_imported),
-        )
-        logger.info("Compliance analysis completed")
-        overall_result = compliance.overall_result
-        score = compliance.compliance_score
-        compliance_score = compliance.compliance_score
-        risk_score = compliance.risk_score
-        compliance_results = compliance.results
         if compliance.overall_result == "pass":
             result_status = "success"
             report = quality_reason
@@ -266,6 +337,7 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
         front_result.get("engine", "unknown"),
         len(per_side),
     )
+    logger.info("SCAN: final extraction source = %s", extraction_source)
 
     front_side = per_side[0] if per_side else None
     back_side = per_side[1] if len(per_side) > 1 else None

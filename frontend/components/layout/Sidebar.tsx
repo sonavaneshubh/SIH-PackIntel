@@ -110,6 +110,62 @@ export const Sidebar = React.memo(function Sidebar({
     onClose();
     await signOut();
   }, [onClose, signOut]);
+  const navItems = [
+    {
+      label: "Dashboard",
+      href: "/",
+      icon: "dashboard",
+      isActive: pathname === "/" || pathname === "/dashboard",
+    },
+    {
+      label: "New Scan",
+      href: "/scan/new",
+      icon: "barcode_scanner",
+      isActive: pathname.startsWith("/scan"),
+    },
+    {
+      label: "Recent Inspections",
+      href: "/recent-inspections",
+      icon: "query_stats",
+      isActive: pathname === "/recent-inspections",
+    },
+    {
+      label: "High-Priority Inspections",
+      href: "/#high-priority",
+      icon: "warning",
+      isActive: false,
+    },
+    {
+      label: "Compliance Results",
+      href: "/results",
+      icon: "assignment_turned_in",
+      isActive: pathname === "/results",
+    },
+    {
+      label: "Rule Database",
+      href: "/rules",
+      icon: "gavel",
+      isActive: pathname === "/rules",
+    },
+    {
+      label: "Violation Analytics",
+      href: "/analytics",
+      icon: "analytics",
+      isActive: pathname === "/analytics",
+    },
+    {
+      label: "Reports",
+      href: "/reports",
+      icon: "description",
+      isActive: pathname === "/reports",
+    },
+    {
+      label: "Settings",
+      href: "/settings",
+      icon: "settings",
+      isActive: pathname === "/settings",
+    },
+  ];
 
   return (
     <>

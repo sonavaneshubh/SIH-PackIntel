@@ -64,7 +64,7 @@ export interface ScanResponse {
   }>;
   // Canonical per-field extraction (single source of truth for the results grid).
   product_information?: ProductInformation;
-  extraction_source?: 'ocr' | 'vision' | 'ocr+vision';
+  extraction_source?: 'ocr' | 'vision' | 'ocr+vision' | 'gemini_vision';
   vision_used?: boolean;
   vision_error?: string | null;
   extracted_declarations?: Record<string, unknown>;
