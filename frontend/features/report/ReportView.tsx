@@ -17,13 +17,12 @@ import { CONFLICT_SENSITIVE_FIELDS, parseProductInformation } from '@/types/prod
 import {
   buildPopulatedFields,
   formatDate,
-  formatExtractionSource,
   getConfidence,
   getStatus,
-  parsePipelineMeta,
   ComplianceResultWithRule,
 } from './reportUtils';
-import { ProductFieldValue, QualityItem, ResultPill, SectionHeading, SummaryItem } from './reportComponents';
+import { ProductFieldValue, ResultPill, SectionHeading, SummaryItem } from './reportComponents';
+import { buildReportTitle, reportBrandName, reportCompanyName, reportProductId } from '@/lib/reporting';
 import { cn } from '@/lib/utils';
 
 type LoadState = 'loading' | 'not_found' | 'error' | 'ready';
@@ -121,6 +120,13 @@ export function ReportView() {
     (result) => result.status === 'FAIL' || result.status === 'UNCERTAIN'
   );
   const productInformation = parseProductInformation(label?.product_information);
+  const reportTitle = useMemo(
+    () => (inspection ? buildReportTitle(inspection, label, productInformation) : ''),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [inspection, label, productInformation]
+  );
+  const productBrand = reportBrandName(inspection, label, productInformation);
+  const productCompany = reportCompanyName(inspection, label, productInformation);
   const pipelineMeta = parsePipelineMeta(label?.other_declarations);
   const frontOcr = image?.ocr_text || '';
   const rawOcr = backImage?.ocr_text
@@ -167,47 +173,65 @@ export function ReportView() {
     );
 
   return (
-    <AppShell pageTitle="Legal Metrology Inspection Report">
+    <AppShell pageTitle={reportTitle || 'Legal Metrology Inspection Report'}>
       <main className="report-page mx-auto w-full max-w-6xl pb-12">
-        {/* Report header */}
-        <header className="report-header mb-6 flex flex-col gap-5 border-b border-outline-variant pb-6 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="mb-1.5 text-label-bold font-label-bold uppercase tracking-[0.18em] text-primary">
-              PackIntel · SIH034
-            </p>
-            <h1 className="text-3xl font-bold text-on-surface md:text-4xl">Legal Metrology Compliance Report</h1>
-            <p className="mt-1.5 text-sm text-on-surface-variant">
-              Rule-Driven Legal Metrology (Packaged Commodities) Rules, 2011 Compliance Analysis
-            </p>
-            <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-xs text-on-surface-variant">
-              <span>
-                Report ID: <strong className="text-on-surface">{inspection.inspection_number || inspection.id}</strong>
-              </span>
-              <span>
-                Inspected: <strong className="text-on-surface">{formatDate(inspection.inspected_at || inspection.created_at)}</strong>
-              </span>
-              <span className="text-primary font-medium">Source of Truth: Rules Database</span>
+        {/* Top action bar — Back then Download PDF Report, side-by-side */}
+        <div className="mb-5 flex flex-wrap items-center gap-3">
+          <Link href="/history">
+            <Button variant="outline" icon="arrow_back">
+              Back
+            </Button>
+          </Link>
+          <Button variant="secondary" icon="download" onClick={handlePdf}>
+            Download PDF Report
+          </Button>
+        </div>
+
+        {/* Report header — left: product info, right: scanned images */}
+        <section className="report-header mb-6 rounded-2xl border border-outline-variant bg-surface p-5 lg:p-6">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+            {/* Left: label, title, brand/manufacturer, metadata */}
+            <div className="min-w-0 flex-1">
+              <p className="mb-1.5 text-label-bold font-label-bold uppercase tracking-[0.18em] text-primary">
+                PackIntel · SIH034
+              </p>
+              <h1 className="text-2xl font-bold leading-snug text-on-surface md:text-3xl">
+                {reportTitle}
+              </h1>
+              {(productBrand || productCompany) && (
+                <p className="mt-1.5 text-sm font-medium text-on-surface-variant">
+                  {[productBrand, productCompany].filter(Boolean).join(' | ')}
+                </p>
+              )}
+              <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-on-surface-variant">
+                <span>
+                  Product ID: <strong className="text-on-surface">{reportProductId(inspection)}</strong>
+                </span>
+                <span>
+                  Inspection ID: <strong className="text-on-surface">{inspection.inspection_number || inspection.id}</strong>
+                </span>
+                <span>
+                  Inspected On: <strong className="text-on-surface">{formatDate(inspection.inspected_at || inspection.created_at)}</strong>
+                </span>
+                <span className="text-primary font-medium">Source of Truth: Rules Database</span>
+              </div>
+            </div>
+
+            {/* Right: front & back scanned images (equal sizing, never stretched) */}
+            <div className="flex gap-3 sm:gap-4">
+              <ScanImageBox
+                url={imageUrl}
+                caption="Front"
+                alt="Front side of scanned package label"
+              />
+              <ScanImageBox
+                url={backImageUrl}
+                caption="Back"
+                alt="Back side of scanned package label"
+              />
             </div>
           </div>
-          <div className="report-actions flex flex-wrap gap-2">
-            <Link href="/history">
-              <Button variant="outline" icon="arrow_back">
-                Back to History
-              </Button>
-            </Link>
-            <Button variant="secondary" icon="download" onClick={handlePdf}>
-              Download PDF Report
-            </Button>
-            <Button variant="outline" icon="print" onClick={() => window.print()}>
-              Print Report
-            </Button>
-            <Link href="/scan/new">
-              <Button variant="primary" icon="add">
-                New Scan
-              </Button>
-            </Link>
-          </div>
-        </header>
+        </section>
 
         {reportMessage && (
           <p role="status" className="report-actions mb-4 text-xs text-primary">
@@ -611,5 +635,34 @@ function NotFoundState({ onBack }: { onBack: () => void }) {
         Back to History
       </Button>
     </div>
+  );
+}
+
+/** Equal-sized, responsive thumbnail box for a scanned package label side. */
+function ScanImageBox({
+  url,
+  caption,
+  alt,
+}: {
+  url: string | null;
+  caption: 'Front' | 'Back';
+  alt: string;
+}) {
+  return (
+    <figure className="group flex w-[150px] flex-col sm:w-[220px]">
+      {url ? (
+        <div className="h-[110px] w-full overflow-hidden rounded-xl border border-outline-variant bg-white shadow-sm transition-all duration-200 group-hover:-translate-y-0.5 group-hover:shadow-md sm:h-[150px]">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={url} alt={alt} className="h-full w-full object-contain p-1.5" />
+        </div>
+      ) : (
+        <div className="grid h-[110px] w-full place-items-center rounded-xl border border-dashed border-outline-variant bg-surface-container-low p-2 text-center text-[11px] leading-tight text-on-surface-variant sm:h-[150px]">
+          {caption} image unavailable
+        </div>
+      )}
+      <figcaption className="mt-1.5 inline-block self-center rounded-full bg-surface-container-high px-2.5 py-0.5 text-center text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+        {caption}
+      </figcaption>
+    </figure>
   );
 }

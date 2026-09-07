@@ -56,13 +56,6 @@ const PRIMARY_NAV: NavItem[] = [
     matchHint: () => false,
   },
   {
-    label: "Compliance Results",
-    href: "/results",
-    icon: "assignment_turned_in",
-    prefetch: true,
-    matchHint: (p) => p === "/results",
-  },
-  {
     label: "Rule Database",
     href: "/rules",
     icon: "gavel",

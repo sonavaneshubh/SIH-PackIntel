@@ -317,6 +317,76 @@ export async function deleteAllMyInspections(): Promise<DeleteAllInspectionsResu
   }
 }
 
+// ─── Report List ──────────────────────────────────────────────────────────────
+// The Reports page is driven by REAL inspections and their scan artifacts. Each
+// inspection row is joined with its extracted label, compliance results, the
+// captured images and any previously generated report files. The joined rows
+// are normalized into the same shape the report detail view already consumes.
+
+export async function getMyComplianceReports(): Promise<{
+  data: Array<
+    Inspection & {
+      extracted_labels: ExtractedLabel | null;
+      compliance_results: ComplianceResultRow[];
+      inspection_images: InspectionImage[];
+      inspection_reports: InspectionReport[];
+    }
+  >;
+  error: string | null;
+}> {
+  const {
+    data: { user },
+    error: authError,
+  } = await getAuthUser();
+
+  if (authError || !user) {
+    return { data: [], error: 'Not authenticated.' };
+  }
+
+  const { data, error } = await supabase
+    .from('inspections')
+    .select(`
+      *,
+      extracted_labels (*),
+      compliance_results (*),
+      inspection_images (*),
+      inspection_reports (*)
+    `)
+    .eq('inspector_id', user.id)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    logSupabaseError('getMyComplianceReports', error);
+    return {
+      data: [],
+      error: `Failed to load compliance reports: ${supabaseErrorDetail(error)}`,
+    };
+  }
+
+  const rows = (data || []).map((raw) => {
+    const labelRows = Array.isArray(raw.extracted_labels)
+      ? raw.extracted_labels
+      : raw.extracted_labels
+        ? [raw.extracted_labels]
+        : [];
+    return {
+      ...raw,
+      extracted_labels: normalizeExtractedLabel(labelRows[0] ?? null),
+      compliance_results: Array.isArray(raw.compliance_results)
+        ? raw.compliance_results
+        : [],
+      inspection_images: Array.isArray(raw.inspection_images)
+        ? raw.inspection_images
+        : [],
+      inspection_reports: Array.isArray(raw.inspection_reports)
+        ? raw.inspection_reports
+        : [],
+    };
+  });
+
+  return { data: rows, error: null };
+}
+
 // ─── Dashboard Statistics ─────────────────────────────────────────────────────
 
 export async function getDashboardStats(): Promise<{
