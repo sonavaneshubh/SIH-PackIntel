@@ -43,13 +43,6 @@ const PRIMARY_NAV: NavItem[] = [
     matchHint: (p) => p.startsWith("/scan"),
   },
   {
-    label: "Scan History",
-    href: "/history",
-    icon: "history",
-    prefetch: true,
-    matchHint: (p) => p === "/history",
-  },
-  {
     label: "Recent Inspections",
     href: "/recent-inspections",
     icon: "query_stats",
@@ -102,6 +95,68 @@ const PRIMARY_NAV: NavItem[] = [
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { signOut } = useAuth();
+
+  const handleSignOut = useCallback(() => {
+    signOut();
+    onClose();
+  }, [signOut, onClose]);
+
+  const navItems = [
+    {
+      label: "Dashboard",
+      href: "/",
+      icon: "dashboard",
+      isActive: pathname === "/" || pathname === "/dashboard",
+    },
+    {
+      label: "New Scan",
+      href: "/scan/new",
+      icon: "barcode_scanner",
+      isActive: pathname.startsWith("/scan"),
+    },
+    {
+      label: "Recent Inspections",
+      href: "/recent-inspections",
+      icon: "query_stats",
+      isActive: pathname === "/recent-inspections",
+    },
+    {
+      label: "High-Priority Inspections",
+      href: "/#high-priority",
+      icon: "warning",
+      isActive: false,
+    },
+    {
+      label: "Compliance Results",
+      href: "/results",
+      icon: "assignment_turned_in",
+      isActive: pathname === "/results",
+    },
+    {
+      label: "Rule Database",
+      href: "/rules",
+      icon: "gavel",
+      isActive: pathname === "/rules",
+    },
+    {
+      label: "Violation Analytics",
+      href: "/analytics",
+      icon: "analytics",
+      isActive: pathname === "/analytics",
+    },
+    {
+      label: "Reports",
+      href: "/reports",
+      icon: "description",
+      isActive: pathname === "/reports",
+    },
+    {
+      label: "Settings",
+      href: "/settings",
+      icon: "settings",
+      isActive: pathname === "/settings",
+    },
+  ];
 
   return (
     <>
@@ -224,4 +279,5 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       </aside>
     </>
   );
+}
 }
