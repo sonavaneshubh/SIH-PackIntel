@@ -795,6 +795,8 @@ export default function SettingsPage() {
             Admin access required to modify compliance rules.
           </div>
         )}
+        </div>
+      </div>
       </SectionCard>
     </div>
   );
