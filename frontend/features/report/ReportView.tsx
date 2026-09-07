@@ -36,6 +36,8 @@ export function ReportView() {
   const [label, setLabel] = useState<ExtractedLabel | null>(null);
   const [image, setImage] = useState<InspectionImage | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [backImage, setBackImage] = useState<InspectionImage | null>(null);
+  const [backImageUrl, setBackImageUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reportMessage, setReportMessage] = useState('');
@@ -60,11 +62,18 @@ export function ReportView() {
         setInspection(data);
         setLabel(normalizeExtractedLabel(rawLabel));
         setResults(data.compliance_results || []);
-        const latestImage = data.inspection_images?.[0] || null;
-        setImage(latestImage);
-        if (latestImage?.storage_path) {
-          const signed = await getSignedImageUrl(latestImage.storage_path);
-          setImageUrl(signed.url || latestImage.public_url || null);
+        const images: InspectionImage[] = data.inspection_images || [];
+        const frontImage = images.find((img) => img.image_type === 'label_front') || images[0] || null;
+        const backImage = images.find((img) => img.image_type === 'label_back') || null;
+        setImage(frontImage);
+        setBackImage(backImage);
+        if (frontImage?.storage_path) {
+          const signed = await getSignedImageUrl(frontImage.storage_path);
+          setImageUrl(signed.url || frontImage.public_url || null);
+        }
+        if (backImage?.storage_path) {
+          const signedBack = await getSignedImageUrl(backImage.storage_path);
+          setBackImageUrl(signedBack.url || backImage.public_url || null);
         }
       } catch {
         setError('We could not load this inspection.');
@@ -101,7 +110,10 @@ export function ReportView() {
   const issues = enrichedResults.filter(
     (result) => result.status === 'FAIL' || result.status === 'UNCERTAIN'
   );
-  const rawOcr = image?.ocr_text || label?.raw_ocr_text || '';
+  const frontOcr = image?.ocr_text || '';
+  const rawOcr = backImage?.ocr_text
+    ? `${frontOcr}\n\n────────────────────\nBACK SIDE OCR\n────────────────────\n${backImage.ocr_text}`.trim()
+    : frontOcr || label?.raw_ocr_text || '';
   const productInformation = parseProductInformation(label?.product_information);
   const pipelineMeta = parsePipelineMeta(label?.other_declarations);
   const populatedFields = useMemo(
@@ -401,13 +413,36 @@ export function ReportView() {
         {/* Source Image + Quality Diagnostics */}
         <section className="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-[0.8fr_1.2fr]">
           <Card className="p-5">
-            <SectionHeading title="Source Image" subtitle="Scanned package label artwork." />
-            {imageUrl ? (
-              <img
-                src={imageUrl}
-                alt="Uploaded product label"
-                className="max-h-72 w-full rounded-lg border border-outline-variant bg-surface-container-low object-contain"
-              />
+            <SectionHeading title="Source Images" subtitle="Scanned package label artwork (front & back)." />
+            {imageUrl || backImageUrl ? (
+              <div className={cn('grid gap-3', backImageUrl ? 'grid-cols-1 sm:grid-cols-2' : '')}>
+                {imageUrl && (
+                  <figure>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={imageUrl}
+                      alt="Front side of scanned package label"
+                      className="max-h-72 w-full rounded-lg border border-outline-variant bg-surface-container-low object-contain"
+                    />
+                    <figcaption className="mt-1 text-center text-[11px] font-semibold text-on-surface-variant">
+                      Front Side
+                    </figcaption>
+                  </figure>
+                )}
+                {backImageUrl && (
+                  <figure>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={backImageUrl}
+                      alt="Back side of scanned package label"
+                      className="max-h-72 w-full rounded-lg border border-outline-variant bg-surface-container-low object-contain"
+                    />
+                    <figcaption className="mt-1 text-center text-[11px] font-semibold text-on-surface-variant">
+                      Back Side
+                    </figcaption>
+                  </figure>
+                )}
+              </div>
             ) : (
               <div className="grid h-48 place-items-center rounded-lg bg-surface-container-low text-sm text-on-surface-variant">
                 Image preview unavailable

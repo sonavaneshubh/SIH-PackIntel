@@ -193,6 +193,115 @@ export async function getMyInspections(options?: {
   return { data: data || [], error: null, count: count || 0 };
 }
 
+// ─── Data & History Cleanup ───────────────────────────────────────────────────
+// Removes every scan record belonging to the signed-in user: database rows
+// (inspections plus their cascade-deleted images/labels/compliance/reports)
+// AND the actual files in the private storage buckets, which the FK cascade
+// never touches.
+
+const STORAGE_BATCH_SIZE = 100;
+
+async function chunk<T>(items: T[], size: number): Promise<T[][]> {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
+  return chunks;
+}
+
+export type DeleteAllInspectionsResult = {
+  data: { deletedInspections: number; removedFiles: number } | null;
+  error: string | null;
+  warnings: string[];
+};
+
+export async function deleteAllMyInspections(): Promise<DeleteAllInspectionsResult> {
+  const warnings: string[] = [];
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user) {
+    return { data: null, error: 'Not authenticated.', warnings };
+  }
+
+  try {
+    // 1. Gather the user's inspection rows (RLS scopes this to their own data).
+    const { data: inspections, error: listError } = await supabase
+      .from('inspections')
+      .select('id')
+      .eq('inspector_id', user.id);
+    if (listError) {
+      logSupabaseError('deleteAllMyInspections:list', listError);
+      return { data: null, error: `Failed to list inspections: ${supabaseErrorDetail(listError)}`, warnings };
+    }
+
+    if (!inspections || inspections.length === 0) {
+      return { data: { deletedInspections: 0, removedFiles: 0 }, error: null, warnings };
+    }
+
+    const inspectionIds = inspections.map((r) => r.id);
+
+    // 2. Collect storage object paths from images and reports before deleting
+    //    the rows, since cascades will remove the DB records but not the files.
+    const imagePaths: string[] = [];
+    const reportPaths: string[] = [];
+
+    for (const ids of await chunk(inspectionIds, 200)) {
+      const [imagesRes, reportsRes] = await Promise.all([
+        supabase.from('inspection_images').select('storage_path').in('inspection_id', ids),
+        supabase.from('inspection_reports').select('storage_path').in('inspection_id', ids),
+      ]);
+      if (imagesRes.error) logSupabaseError('deleteAllMyInspections:imagesList', imagesRes.error);
+      if (reportsRes.error) logSupabaseError('deleteAllMyInspections:reportsList', reportsRes.error);
+      imagePaths.push(...(imagesRes.data ?? [])
+        .map((r) => r.storage_path).filter((p): p is string => Boolean(p)));
+      reportPaths.push(...(reportsRes.data ?? [])
+        .map((r) => r.storage_path).filter((p): p is string => Boolean(p)));
+    }
+
+    // 3. Remove the actual files from the private buckets. Storage removal is
+    //    best-effort: DB cleanup still proceeds if a file removal fails.
+    for (const [bucket, paths] of [
+      [IMAGE_BUCKET, imagePaths],
+      [REPORT_BUCKET, reportPaths],
+    ] as const) {
+      for (const batch of await chunk(paths, STORAGE_BATCH_SIZE)) {
+        const { error: removeError } = await supabase.storage.from(bucket).remove(batch);
+        if (removeError) {
+          logSupabaseError(`deleteAllMyInspections:storage(${bucket})`, removeError);
+          warnings.push(`Some files in '${bucket}' could not be removed.`);
+        }
+      }
+    }
+
+    // 4. Delete the inspection rows; child tables cascade on delete.
+    const { error: deleteError } = await supabase
+      .from('inspections')
+      .delete()
+      .eq('inspector_id', user.id);
+    if (deleteError) {
+      logSupabaseError('deleteAllMyInspections:delete', deleteError);
+      return {
+        data: null,
+        error: `Failed to delete inspections: ${supabaseErrorDetail(deleteError)}`,
+        warnings,
+      };
+    }
+
+    return {
+      data: {
+        deletedInspections: inspectionIds.length,
+        removedFiles: imagePaths.length + reportPaths.length,
+      },
+      error: null,
+      warnings,
+    };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'Unknown error';
+    return { data: null, error: message, warnings };
+  }
+}
+
 // ─── Dashboard Statistics ─────────────────────────────────────────────────────
 
 export async function getDashboardStats(): Promise<{
