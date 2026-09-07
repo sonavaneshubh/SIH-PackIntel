@@ -29,12 +29,6 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       isActive: pathname.startsWith("/scan"),
     },
     {
-      label: "Scan History",
-      href: "/history",
-      icon: "history",
-      isActive: pathname === "/history",
-    },
-    {
       label: "Recent Inspections",
       href: "/recent-inspections",
       icon: "query_stats",
