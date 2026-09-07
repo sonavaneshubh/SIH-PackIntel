@@ -164,17 +164,28 @@ export function CameraScanner({
   }, []);
 
   // Detects whether the active video track can drive the torch/flashlight.
-  // The check never assumes `getCapabilities().torch` exists; unsupported
-  // browsers/devices simply render no torch button.
-  const detectTorchSupport = useCallback((stream: MediaStream) => {
+  // Some Android Chrome builds expose torch through `applyConstraints` but not
+  // in `getCapabilities()`, so a no-flash probe with `torch: false` is used as
+  // a fallback. The result only gates whether the button is enabled — the icon
+  // itself stays visible so the feature is discoverable on every device.
+  const detectTorchSupport = useCallback(async (stream: MediaStream) => {
     const track = stream.getVideoTracks()?.[0];
-    if (!track || typeof track.getCapabilities !== 'function') {
+    if (!track || typeof track.applyConstraints !== 'function') {
       setTorchSupported(false);
       return;
     }
     try {
       const capabilities = track.getCapabilities() as MediaTrackCapabilities & { torch?: boolean };
-      setTorchSupported(capabilities.torch === true);
+      if (capabilities.torch === true) {
+        setTorchSupported(true);
+        return;
+      }
+    } catch {
+      // Fall through to the probe.
+    }
+    try {
+      await track.applyConstraints({ advanced: [{ torch: false } as MediaTrackConstraintSet] });
+      setTorchSupported(true);
     } catch {
       setTorchSupported(false);
     }
@@ -270,7 +281,7 @@ export function CameraScanner({
         }
 
         streamRef.current = stream;
-        detectTorchSupport(stream);
+        void detectTorchSupport(stream);
         const video = videoRef.current;
         if (video) {
           video.srcObject = stream;
@@ -508,15 +519,17 @@ export function CameraScanner({
           <span className="rounded bg-black/55 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-[#cbd5e1] backdrop-blur-sm">
             Step {scanSide === 'front' ? '1' : '2'} of 2 — Scan {scanSide === 'front' ? 'Front' : 'Back'} Side
           </span>
-          {phase === 'turn_package' && (
-            <span className="flex items-center gap-1.5 rounded bg-[#00bfa5]/15 px-2.5 py-1 text-[11px] font-semibold text-[#00bfa5] backdrop-blur-sm">
-              <span className="relative flex size-1.5">
-                <span className="scanner-dot-ping absolute inline-flex size-full rounded-full bg-[#00bfa5]" />
-                <span className="relative inline-flex size-1.5 rounded-full bg-[#00bfa5]" />
+          <div className="flex items-center gap-2">
+            {phase === 'turn_package' && (
+              <span className="flex items-center gap-1.5 rounded bg-[#00bfa5]/15 px-2.5 py-1 text-[11px] font-semibold text-[#00bfa5] backdrop-blur-sm">
+                <span className="relative flex size-1.5">
+                  <span className="scanner-dot-ping absolute inline-flex size-full rounded-full bg-[#00bfa5]" />
+                  <span className="relative inline-flex size-1.5 rounded-full bg-[#00bfa5]" />
+                </span>
+                Ready to capture
               </span>
-              Ready to capture
-            </span>
-          )}
+            )}
+          </div>
         </div>
 
         {frameOverlayActive && (
@@ -651,7 +664,34 @@ export function CameraScanner({
           </div>
         )}
 
-        <div className="pointer-events-none absolute inset-x-4 bottom-3 z-[7] flex items-center justify-between">
+        {phase !== 'permission_required' &&
+          phase !== 'permission_denied' &&
+          phase !== 'camera_error' &&
+          phase !== 'initializing' &&
+          phase !== 'processing' &&
+          phase !== 'completed' && (
+          <button
+            type="button"
+            onClick={() => void toggleTorch()}
+            disabled={!torchSupported}
+            aria-label={torchButtonLabel}
+            aria-pressed={torchOn}
+            title={torchButtonLabel}
+            className={`absolute bottom-3 left-4 z-[7] flex size-10 items-center justify-center rounded-full border backdrop-blur-sm transition-colors disabled:cursor-not-allowed ${
+              torchOn
+                ? 'border-[#00bfa5] bg-[#00bfa5] text-white'
+                : 'border-white/25 bg-black/45 text-white hover:bg-black/60 disabled:opacity-40'
+            }`}
+          >
+            {torchOn ? (
+              <FlashlightOff size={18} aria-hidden="true" />
+            ) : (
+              <Flashlight size={18} aria-hidden="true" />
+            )}
+          </button>
+        )}
+
+        <div className="pointer-events-none absolute bottom-3 right-4 z-[7] flex items-center justify-end">
           <span
             className={`flex items-center gap-1.5 rounded bg-black/55 px-2 py-1 text-[10px] font-semibold tracking-wide backdrop-blur-sm ${
               phase === 'permission_denied' || phase === 'camera_error' ? 'text-amber-400' : 'text-[#cbd5e1]'
@@ -687,23 +727,6 @@ export function CameraScanner({
             <Camera size={17} aria-hidden="true" />
             {captureLabel}
           </Button>
-          {torchSupported && (
-            <Button
-              variant={torchOn ? 'secondary' : 'outline'}
-              size="lg"
-              onClick={() => void toggleTorch()}
-              className="w-full sm:w-auto"
-              aria-label={torchButtonLabel}
-              aria-pressed={torchOn}
-            >
-              {torchOn ? (
-                <FlashlightOff size={17} aria-hidden="true" />
-              ) : (
-                <Flashlight size={17} aria-hidden="true" />
-              )}
-              {torchOn ? 'Flashlight On' : 'Flashlight'}
-            </Button>
-          )}
           {onUploadRequest && (
             <Button
               variant="secondary"
