@@ -15,3 +15,8 @@ services:
       # All *.vercel.app preview URLs are already allowed via allow_origin_regex.
       - key: FRONTEND_URL
         sync: false
+      # Supabase Storage bucket that stores generated inspection reports. The
+      # backend creates it automatically on startup if it is missing. Keep it
+      # in sync with the bucket the frontend uses to upload reports.
+      - key: REPORT_STORAGE_BUCKET
+        sync: false

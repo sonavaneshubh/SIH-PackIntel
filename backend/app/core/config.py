@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     # Hard timeout (seconds) for each OCR.Space API call.
     OCR_TIMEOUT_SECONDS: int = 60
 
+    # Supabase Storage bucket that holds generated inspection report artifacts
+    # (PDF/JSON/Excel). The backend ensures it exists at startup and the
+    # frontend uploads reports into it. Keep in sync with the frontend bucket.
+    REPORT_STORAGE_BUCKET: str = "inspection-reports"
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     @property

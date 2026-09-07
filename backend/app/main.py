@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.api.routes import scan, inspection, compliance, reports
 from app.services.ocr_service import get_tesseract_diagnostics
+from app.services.storage_service import ensure_inspection_reports_bucket
 
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,9 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         logger.info("OCR ready: Tesseract %s", diagnostics["version"])
     else:
         logger.warning("OCR unavailable: %s", diagnostics["message"])
+
+    await ensure_inspection_reports_bucket()
+
     yield
 
 
