@@ -1,250 +1,255 @@
 'use client';
 
-import React from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/layout/AppShell';
-import { cn } from '@/lib/utils';
 
-/* ─────────────────────────────────────────────────────────────
-   Shared building blocks
-   ───────────────────────────────────────────────────────────── */
-
-function SectionHeading({
-  eyebrow,
-  title,
-  subtitle,
-}: {
-  eyebrow?: string;
-  title: string;
-  subtitle?: string;
-}) {
+function FoundBadge() {
   return (
-    <div className="text-center">
-      {eyebrow && (
-        <span className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-[#E6F7F2] px-3.5 py-1 text-xs font-semibold uppercase tracking-wider text-[#0F766E]">
-          <span className="material-symbols-outlined text-[15px]">auto_awesome</span>
-          {eyebrow}
-        </span>
-      )}
-      <h2 className="text-2xl font-black tracking-tight text-[#0B1B33] sm:text-3xl">
-        {title}
-      </h2>
-      {subtitle && (
-        <p className="mx-auto mt-3 max-w-xl text-[#475569] sm:text-lg">{subtitle}</p>
-      )}
-    </div>
+    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">
+      <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+        <path
+          clipRule="evenodd"
+          d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z"
+          fillRule="evenodd"
+        />
+      </svg>
+      Found
+    </span>
   );
 }
-
-/* ─────────────────────────────────────────────────────────────
-   Section 1 — Hero
-   ───────────────────────────────────────────────────────────── */
-
-const HERO_RESULTS = [
-  { label: 'MRP ₹20.00', status: 'Found', tone: 'ok' },
-  { label: 'Net Quantity 50 g', status: 'Found', tone: 'ok' },
-  { label: 'Mfg. Date 12/05/2025', status: 'Found', tone: 'ok' },
-  { label: 'Best Before 11/11/2025', status: 'Found', tone: 'ok' },
-  { label: 'FSSAI License', status: 'Missing', tone: 'err' },
-];
 
 function HeroSection() {
   return (
-    <section className="relative overflow-hidden">
-      <div className="pointer-events-none absolute -top-24 right-0 h-[440px] w-[520px] rounded-full bg-[#1A73E8]/[0.08] blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-32 left-1/4 h-[380px] w-[460px] rounded-full bg-[#0F766E]/[0.07] blur-3xl" />
-
-      <div className="relative mx-auto grid max-w-6xl items-center gap-10 px-4 py-12 sm:py-14 lg:grid-cols-[1.05fr_0.95fr] lg:gap-12 lg:py-20">
-        {/* LEFT */}
-        <div className="home-fade-up">
-          <span className="inline-flex items-center gap-2 rounded-full border border-[#BFE3D8] bg-[#E6F7F2] px-3.5 py-1.5 text-xs font-semibold tracking-wide text-[#0F766E]">
-            <span className="material-symbols-outlined text-[15px]">verified_user</span>
-            AI • OCR • Compliance • Faster
-          </span>
-
-          <h1 className="mt-6 text-3xl font-black leading-[1.15] text-[#0B1B33] sm:text-4xl lg:text-[46px]">
-            AI-Powered Compliance Inspection for{' '}
-            <span className="text-[#0F766E]">Packaged Commodities</span>
-          </h1>
-
-          <p className="mt-5 max-w-lg text-base leading-relaxed text-[#475569] sm:text-lg">
-            Scan packaging with AI. Detect missing declarations, labeling errors
-            and compliance risks in seconds.
-          </p>
-
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
-            <Link
-              href="/scan/new"
-              className="group inline-flex items-center justify-center gap-2 rounded-xl bg-[#1A73E8] px-6 py-3.5 text-sm font-semibold text-white shadow-lg shadow-[#1A73E8]/25 transition-all hover:-translate-y-0.5 hover:bg-[#005BBF] hover:shadow-xl hover:shadow-[#1A73E8]/30 focus:outline-none focus:ring-2 focus:ring-[#1A73E8] focus:ring-offset-2"
-            >
-              Start Inspection
-              <span className="material-symbols-outlined text-[18px] transition-transform group-hover:translate-x-0.5">
-                arrow_forward
-              </span>
-            </Link>
-            <a
-              href="#how-it-works"
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#CBD5E1] bg-white px-6 py-3.5 text-sm font-semibold text-[#0B1B33] transition-all hover:-translate-y-0.5 hover:border-[#94A3B8] hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#CBD5E1]"
-            >
-              <span className="material-symbols-outlined text-[18px] text-[#0F766E]">
-                play_circle
-              </span>
-              See How It Works
-            </a>
-          </div>
-
-          <div className="mt-9 flex flex-wrap gap-2.5">
-            {['AI Vision', 'OCR', 'Rule-Based Validation', 'Instant Report'].map((cap) => (
-              <span
-                key={cap}
-                className="inline-flex items-center gap-1.5 rounded-full border border-[#E2E8F0] bg-white px-3 py-1.5 text-xs font-medium text-[#475569]"
-              >
-                <span className="material-symbols-outlined text-[16px] text-[#0F766E]">
-                  check_circle
-                </span>
-                {cap}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        {/* RIGHT — inspection visual */}
-        <div className="home-fade-up relative" style={{ animationDelay: '120ms' }}>
-          <div className="relative mx-auto max-w-md rounded-3xl border border-[#E2E8F0] bg-gradient-to-br from-white to-[#F0F6FF] p-6 shadow-2xl shadow-[#0B1B33]/[0.08]">
-            <div className="flex items-center justify-between pb-4">
-              <span className="text-xs font-semibold text-[#475569]">
-                Package Inspection
-              </span>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#E6F7F2] px-2.5 py-1 text-[11px] font-semibold text-[#0F766E]">
-                <span className="relative flex size-1.5">
-                  <span className="absolute inline-flex size-full animate-ping rounded-full bg-[#0F766E] opacity-75" />
-                  <span className="relative inline-flex size-1.5 rounded-full bg-[#0F766E]" />
-                </span>
-                Live
-              </span>
+    <section
+      className="relative pt-12 pb-20 lg:pt-16 lg:pb-24 glow-cyan-bg border-b border-slate-100"
+      data-purpose="hero-section"
+    >
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-8 items-center">
+          {/* Hero Left Content */}
+          <div className="lg:col-span-6 space-y-7">
+            {/* Top Tag Badge */}
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-50 border border-blue-100/80 text-blue-600 text-xs font-semibold tracking-wide shadow-sm">
+              <span>AI</span>
+              <span className="text-blue-300">•</span>
+              <span>OCR</span>
+              <span className="text-blue-300">•</span>
+              <span>Compliance</span>
+              <span className="text-blue-300">•</span>
+              <span>Faster</span>
             </div>
-
-            <div className="relative flex items-center justify-center py-8">
-              <div className="absolute inset-x-6 -inset-y-1 rounded-3xl bg-gradient-to-br from-[#1A73E8]/[0.10] to-[#0F766E]/[0.10]" />
-              <div className="relative flex aspect-[3/4] w-40 flex-col justify-between overflow-hidden rounded-2xl border-2 border-[#1A73E8]/40 bg-gradient-to-b from-[#FDE68A] to-[#F59E0B] p-3 shadow-lg scanner-border-active">
-                <div className="flex justify-between">
-                  <span className="h-2.5 w-2.5 rounded-sm bg-[#0F766E]" />
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#0F766E] text-[12px] font-black text-white">
-                    P
-                  </span>
-                </div>
-                <div className="space-y-1.5">
-                  <div className="h-2 rounded bg-white/50" />
-                  <div className="h-2 w-3/4 rounded bg-white/50" />
-                  <div className="mt-2 h-6 w-20 rounded-md bg-white/80" />
-                </div>
-                <div className="scanner-scan-line pointer-events-none absolute inset-x-1 h-0.5 rounded-full bg-gradient-to-r from-transparent via-[#22D3EE] to-transparent" />
-              </div>
-            </div>
-
-            <div className="relative -mt-2 mb-4 flex justify-center">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#0B1B33] px-4 py-1.5 text-xs font-medium text-white shadow-lg">
-                <span className="material-symbols-outlined text-[15px] text-[#22D3EE]">
-                  auto_awesome
-                </span>
-                AI Inspection in Progress...
-              </span>
-            </div>
-
-            <div className="space-y-2">
-              {HERO_RESULTS.map((r) => (
-                <div
-                  key={r.label}
-                  className={cn(
-                    'flex items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-sm',
-                    r.tone === 'ok'
-                      ? 'border-[#BFE3D8] bg-[#F2FBF8]'
-                      : 'border-[#FECACA] bg-[#FEF2F2]'
-                  )}
-                >
-                  <span className="flex min-w-0 items-center gap-2 font-medium text-[#1E293B]">
-                    <span
-                      className={cn(
-                        'material-symbols-outlined text-[17px]',
-                        r.tone === 'ok' ? 'text-[#0F766E]' : 'text-[#DC2626]'
-                      )}
-                    >
-                      {r.tone === 'ok' ? 'check_circle' : 'cancel'}
-                    </span>
-                    {r.label}
-                  </span>
-                  <span
-                    className={cn(
-                      'text-xs font-semibold',
-                      r.tone === 'ok' ? 'text-[#0F766E]' : 'text-[#DC2626]'
-                    )}
-                  >
-                    {r.status}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ─────────────────────────────────────────────────────────────
-   Section 2 — Why PackIntel (concise benefit cards)
-   ───────────────────────────────────────────────────────────── */
-
-const BENEFITS = [
-  {
-    icon: 'bolt',
-    title: 'Lightning Fast',
-    desc: 'Scan a label and get results in seconds.',
-  },
-  {
-    icon: 'visibility',
-    title: 'Catch Hidden Violations',
-    desc: 'AI spots missing declarations humans miss.',
-  },
-  {
-    icon: 'verified',
-    title: 'Regulatory Accuracy',
-    desc: 'Rule-based checks aligned with legal metrology.',
-  },
-];
-
-function WhySection() {
-  return (
-    <section className="border-y border-[#E8EEF7] bg-[#F7FAFF]">
-      <div className="mx-auto max-w-6xl px-4 py-12 sm:py-14">
-        <div className="grid items-center gap-8 lg:grid-cols-[1fr_1.4fr]">
-          <div className="home-fade-up">
-            <h2 className="text-2xl font-black tracking-tight text-[#0B1B33] sm:text-3xl">
-              Stop slow, manual label checks.
-              <br />
-              <span className="text-[#0F766E]">Inspect with AI.</span>
-            </h2>
-            <p className="mt-4 max-w-md text-[#475569]">
-              Manual inspection is error-prone and misses critical violations.
-              PackIntel automates the whole process with accurate, actionable
-              results.
+            {/* Headline */}
+            <h1 className="text-4xl sm:text-5xl lg:text-[3.25rem] font-extrabold text-slate-900 leading-[1.15] tracking-tight">
+              AI-Powered Compliance Inspection for{' '}
+              <span className="text-emerald-500">Packaged Commodities</span>
+            </h1>
+            {/* Subtitle */}
+            <p className="text-slate-600 text-lg sm:text-xl font-normal leading-relaxed max-w-xl">
+              Scan packaging with AI. Detect missing declarations, labeling errors and compliance
+              risks in seconds.
             </p>
+            {/* Action Buttons */}
+            <div className="flex flex-wrap items-center gap-4 pt-2">
+              <Link
+                className="inline-flex items-center justify-center px-6 py-3.5 text-base font-semibold text-white bg-blue-600 hover:bg-blue-700 active:scale-[0.98] rounded-full shadow-lg shadow-blue-500/25 transition duration-150"
+                href="/scan/new"
+              >
+                Start Inspection
+                <svg
+                  className="ml-2 w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </Link>
+              <a
+                className="inline-flex items-center justify-center px-6 py-3.5 text-base font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-full shadow-sm transition duration-150"
+                href="#how-it-works"
+              >
+                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-blue-50 text-blue-600 mr-2.5">
+                  <svg className="w-3 h-3 fill-current ml-0.5" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </span>
+                See How It Works
+              </a>
+            </div>
+            {/* Micro Features Row */}
+            <div
+              className="pt-6 grid grid-cols-2 sm:grid-cols-4 gap-4 border-t border-slate-200/70"
+              data-purpose="hero-micro-features"
+            >
+              <div className="flex items-center space-x-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </div>
+                <span className="text-xs font-semibold text-slate-700">AI Vision</span>
+              </div>
+              <div className="flex items-center space-x-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </div>
+                <span className="text-xs font-semibold text-slate-700">OCR</span>
+              </div>
+              <div className="flex items-center space-x-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </div>
+                <span className="text-xs font-semibold text-slate-700 leading-tight">
+                  Rule-Based Validation
+                </span>
+              </div>
+              <div className="flex items-center space-x-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </div>
+                <span className="text-xs font-semibold text-slate-700">Instant Report</span>
+              </div>
+            </div>
           </div>
 
-          <div className="grid gap-5 sm:grid-cols-3">
-            {BENEFITS.map((b, i) => (
-              <div
-                key={b.title}
-                className="home-fade-up group rounded-2xl border border-[#E2E8F0] bg-white p-5 text-center shadow-sm transition-all hover:-translate-y-1 hover:border-[#1A73E8]/30 hover:shadow-lg"
-                style={{ animationDelay: `${i * 90}ms` }}
-              >
-                <div className="mx-auto flex size-12 items-center justify-center rounded-xl bg-[#EAF3FF] text-[#1A73E8] transition-colors group-hover:bg-[#1A73E8] group-hover:text-white">
-                  <span className="material-symbols-outlined text-[24px]">{b.icon}</span>
-                </div>
-                <h3 className="mt-4 text-sm font-bold text-[#0B1B33]">{b.title}</h3>
-                <p className="mt-1.5 text-xs leading-relaxed text-[#64748B]">{b.desc}</p>
+          {/* Hero Right Graphic (Simulated AI Packaging Scan) */}
+          <div className="lg:col-span-6 relative flex justify-center items-center" data-purpose="hero-scanner-preview">
+            {/* Ambient Glow Ring Behind Scanner */}
+            <div className="absolute w-80 h-80 sm:w-96 sm:h-96 bg-cyan-100/60 rounded-full blur-3xl -z-10 pointer-events-none"></div>
+            {/* Main Visual Card Container */}
+            <div className="relative w-full max-w-lg bg-white/70 backdrop-blur-md rounded-3xl p-6 border border-slate-100 shadow-2xl shadow-slate-200/50">
+              {/* Floating AI Status Badge */}
+              <div className="mb-4 inline-flex items-center gap-2 bg-blue-50 border border-blue-200 px-3.5 py-1.5 rounded-xl shadow-sm">
+                <span className="flex h-2.5 w-2.5 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-600"></span>
+                </span>
+                <span className="text-xs font-bold text-blue-900">AI Inspection in Progress...</span>
               </div>
-            ))}
+              {/* Scanner Content Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
+                {/* Chips Package with Bounding Box Overlay */}
+                <div className="relative rounded-2xl overflow-hidden shadow-2xl flex flex-col items-center justify-center h-80 border-2 border-dashed border-emerald-400/80 group select-none bg-slate-50">
+                  <img
+                    src="/screen.png"
+                    alt="GoodDay Classic Masala Potato Chips"
+                    className="w-full h-full object-contain rounded-lg drop-shadow-md"
+                  />
+                  <div className="absolute top-2 left-2 w-4 h-4 border-t-2 border-l-2 border-emerald-400 z-20 pointer-events-none"></div>
+                  <div className="absolute top-2 right-2 w-4 h-4 border-t-2 border-r-2 border-emerald-400 z-20 pointer-events-none"></div>
+                  <div className="absolute bottom-2 left-2 w-4 h-4 border-b-2 border-l-2 border-emerald-400 z-20 pointer-events-none"></div>
+                  <div className="absolute bottom-2 right-2 w-4 h-4 border-b-2 border-r-2 border-emerald-400 z-20 pointer-events-none"></div>
+                  <div className="absolute inset-x-2 top-11 bottom-20 border-2 border-emerald-400/90 bg-emerald-500/10 rounded-lg pointer-events-none z-20 animate-pulse"></div>
+                  <div className="absolute z-20 bottom-3 inset-x-2 bg-white/95 backdrop-blur-md rounded-lg p-2 text-[9px] space-y-1 border border-emerald-500/50 shadow-md">
+                    <div className="flex justify-between border-b border-slate-200/60 pb-0.5">
+                      <span className="text-slate-600 font-medium flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
+                        Net Wt:
+                      </span>
+                      <span className="font-bold text-slate-900">52 g</span>
+                    </div>
+                    <div className="flex justify-between border-b border-slate-200/60 pb-0.5">
+                      <span className="text-slate-600 font-medium flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
+                        MRP:
+                      </span>
+                      <span className="font-bold text-slate-900">₹ 20.00</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600 font-medium flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
+                        FSSAI:
+                      </span>
+                      <span className="font-bold text-emerald-600">10012031000312</span>
+                    </div>
+                  </div>
+                </div>
+                {/* Inspection Detection Checklist Card */}
+                <div className="space-y-2.5 text-xs">
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-100 shadow-sm flex items-center justify-between">
+                    <span className="font-medium text-slate-700">
+                      MRP <strong className="text-slate-900">₹ 20.00</strong>
+                    </span>
+                    <FoundBadge />
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-100 shadow-sm flex items-center justify-between">
+                    <span className="font-medium text-slate-700">
+                      Net Quantity <strong className="text-slate-900">52 g</strong>
+                    </span>
+                    <FoundBadge />
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-100 shadow-sm flex items-center justify-between">
+                    <span className="font-medium text-slate-700">
+                      Mfg. Date <strong className="text-slate-900">12/05/2025</strong>
+                    </span>
+                    <FoundBadge />
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-100 shadow-sm flex items-center justify-between">
+                    <span className="font-medium text-slate-700">
+                      Use By <strong className="text-slate-900">11/08/2025</strong>
+                    </span>
+                    <FoundBadge />
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-100 shadow-sm flex items-center justify-between">
+                    <span className="font-medium text-slate-700">
+                      FSSAI <strong className="text-slate-900">10012031000312</strong>
+                    </span>
+                    <FoundBadge />
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -252,283 +257,556 @@ function WhySection() {
   );
 }
 
-/* ─────────────────────────────────────────────────────────────
-   Section 3 — How It Works
-   ───────────────────────────────────────────────────────────── */
-
-const STEPS = [
-  {
-    num: '01',
-    title: 'Upload Package',
-    desc: 'Add an image or scan of the product package (JPG, PNG, PDF).',
-    icon: 'add_photo_alternate',
-  },
-  {
-    num: '02',
-    title: 'AI Analyzes Label',
-    desc: 'OCR + computer vision + rule-based validation check the label.',
-    icon: 'document_scanner',
-  },
-  {
-    num: '03',
-    title: 'Get Compliance Report',
-    desc: 'View violations, risk level, and the full report instantly.',
-    icon: 'description',
-  },
-];
+function ProblemVsSolutionSection() {
+  return (
+    <section className="py-20 bg-white" data-purpose="comparison-section">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+          {/* The Problem Column */}
+          <div className="lg:col-span-5 space-y-6">
+            <div>
+              <h2 className="text-2xl sm:text-3xl font-bold text-slate-900">The Problem</h2>
+              <p className="text-sm sm:text-base text-slate-500 mt-2">
+                Manual inspection is slow, error-prone and misses critical violations.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div className="bg-[#FFF5F5] border border-red-100 rounded-2xl p-4 flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-red-100 text-red-600 flex items-center justify-center shrink-0">
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800">Time-consuming</h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">verification</p>
+                </div>
+              </div>
+              <div className="bg-[#FFF5F5] border border-red-100 rounded-2xl p-4 flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-red-100 text-red-600 flex items-center justify-center shrink-0">
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800">Human errors</h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">in label reading</p>
+                </div>
+              </div>
+              <div className="bg-[#FFF5F5] border border-red-100 rounded-2xl p-4 flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-red-100 text-red-600 flex items-center justify-center shrink-0">
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800">Missing declarations</h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">&amp; labeling violations</p>
+                </div>
+              </div>
+              <div className="bg-[#FFF5F5] border border-red-100 rounded-2xl p-4 flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-red-100 text-red-600 flex items-center justify-center shrink-0">
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800">Inconsistent</h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">compliance checks</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          {/* Center Transition Arrow */}
+          <div className="hidden lg:flex lg:col-span-1 justify-center items-center">
+            <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center">
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+              >
+                <path d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+          </div>
+          {/* PackIntel Solves It Column */}
+          <div className="lg:col-span-6 space-y-6">
+            <div>
+              <h2 className="text-2xl sm:text-3xl font-bold text-slate-900">
+                <span className="text-emerald-500">PackIntel</span> Solves It
+              </h2>
+              <p className="text-sm sm:text-base text-slate-500 mt-2">
+                Automate inspection with AI and get accurate, actionable results.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-5 items-center">
+              {/* Features List */}
+              <div className="sm:col-span-7 bg-[#F4FDF8] border border-emerald-100 rounded-3xl p-5 space-y-3.5">
+                <div className="flex items-center space-x-3">
+                  <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-xs shrink-0">
+                    ✓
+                  </span>
+                  <span className="text-xs sm:text-sm font-semibold text-slate-700">
+                    Faster &amp; more accurate
+                  </span>
+                </div>
+                <div className="flex items-center space-x-3">
+                  <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-xs shrink-0">
+                    ✓
+                  </span>
+                  <span className="text-xs sm:text-sm font-semibold text-slate-700">
+                    Detects hidden violations
+                  </span>
+                </div>
+                <div className="flex items-center space-x-3">
+                  <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-xs shrink-0">
+                    ✓
+                  </span>
+                  <span className="text-xs sm:text-sm font-semibold text-slate-700">
+                    Ensures regulatory compliance
+                  </span>
+                </div>
+                <div className="flex items-center space-x-3">
+                  <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-xs shrink-0">
+                    ✓
+                  </span>
+                  <span className="text-xs sm:text-sm font-semibold text-slate-700">
+                    Saves time and resources
+                  </span>
+                </div>
+              </div>
+              {/* Illustration Card */}
+              <div className="sm:col-span-5 flex justify-center">
+                <div className="relative w-40 h-40 bg-gradient-to-tr from-cyan-100/60 to-emerald-100/40 rounded-3xl p-4 flex items-center justify-center border border-emerald-200/50">
+                  {/* Outer Corner Bracket Lines */}
+                  <div className="absolute top-2 left-2 w-3 h-3 border-t-2 border-l-2 border-emerald-400"></div>
+                  <div className="absolute top-2 right-2 w-3 h-3 border-t-2 border-r-2 border-emerald-400"></div>
+                  <div className="absolute bottom-2 left-2 w-3 h-3 border-b-2 border-l-2 border-emerald-400"></div>
+                  <div className="absolute bottom-2 right-2 w-3 h-3 border-b-2 border-r-2 border-emerald-400"></div>
+                  {/* Cube Box Illustration */}
+                  <div className="w-20 h-20 bg-blue-200/60 rounded-xl shadow-md border border-blue-300 flex flex-col justify-center items-center relative">
+                    <div className="w-8 h-1.5 bg-blue-300 rounded mb-1.5"></div>
+                    <div className="w-12 h-1 bg-blue-300 rounded"></div>
+                    {/* Green Verified Badge */}
+                    <div className="absolute -right-3 -top-3 w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg border-2 border-white">
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path
+                          clipRule="evenodd"
+                          d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                          fillRule="evenodd"
+                        />
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function HowItWorksSection() {
   return (
-    <section id="how-it-works" className="mx-auto max-w-6xl px-4 py-14 sm:py-16">
-      <SectionHeading
-        eyebrow="Simple workflow"
-        title="How It Works"
-        subtitle="Just 3 simple steps to ensure compliance."
-      />
-
-      <div className="relative mt-12 grid items-start gap-10 md:grid-cols-3 md:gap-0">
-        <div className="pointer-events-none absolute left-0 right-0 top-8 hidden h-0.5 bg-gradient-to-r from-[#1A73E8]/30 via-[#0F766E]/40 to-[#1A73E8]/30 md:block" />
-
-        {STEPS.map((step, i) => (
-          <div
-            key={step.num}
-            className={cn(
-              'home-fade-up relative flex flex-col items-center px-6 text-center',
-              i !== 0 && 'mt-10 md:mt-0'
-            )}
-            style={{ animationDelay: `${i * 120}ms` }}
-          >
-            <div className="relative z-10 flex size-16 items-center justify-center rounded-full border-4 border-white bg-gradient-to-br from-[#1A73E8] to-[#0F766E] text-white shadow-lg shadow-[#1A73E8]/25">
-              <span className="material-symbols-outlined text-[26px]">{step.icon}</span>
+    <section
+      className="py-20 bg-slate-50/60 border-t border-slate-100"
+      data-purpose="how-it-works-section"
+      id="how-it-works"
+    >
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        {/* Section Heading */}
+        <h2 className="text-3xl font-extrabold text-slate-900">How It Works</h2>
+        <p className="text-sm sm:text-base text-slate-500 mt-2">Just 3 simple steps to ensure compliance.</p>
+        {/* Steps Grid */}
+        <div className="mt-14 grid grid-cols-1 md:grid-cols-3 gap-8 relative">
+          {/* Step 1 */}
+          <div className="flex flex-col items-center text-center space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-blue-600 text-white font-bold text-sm flex items-center justify-center shadow-sm">
+                1
+              </div>
+              <div className="w-16 h-16 rounded-2xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center shadow-sm">
+                <svg
+                  className="w-7 h-7"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </div>
             </div>
-            <span className="mt-4 text-xs font-bold tracking-widest text-[#0F766E]">
-              STEP {step.num}
-            </span>
-            <h3 className="mt-1.5 text-lg font-bold text-[#0B1B33]">{step.title}</h3>
-            <p className="mt-2 max-w-[240px] text-sm leading-relaxed text-[#64748B]">
-              {step.desc}
-            </p>
+            <div className="max-w-xs">
+              <h3 className="text-base font-bold text-slate-800">Upload Package</h3>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                Add an image or scan of the product package (JPG, PNG, PDF).
+              </p>
+            </div>
           </div>
-        ))}
+          {/* Step 2 */}
+          <div className="flex flex-col items-center text-center space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-indigo-600 text-white font-bold text-sm flex items-center justify-center shadow-sm">
+                2
+              </div>
+              <div className="w-16 h-16 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center shadow-sm">
+                <svg
+                  className="w-7 h-7"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V5.25a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 5.25v13.5A2.25 2.25 0 006.75 21z"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </div>
+            </div>
+            <div className="max-w-xs">
+              <h3 className="text-base font-bold text-slate-800">AI Analyzes Label</h3>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                OCR + computer vision + rule-based validation checks the label.
+              </p>
+            </div>
+          </div>
+          {/* Step 3 */}
+          <div className="flex flex-col items-center text-center space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-emerald-600 text-white font-bold text-sm flex items-center justify-center shadow-sm">
+                3
+              </div>
+              <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-100 text-emerald-600 flex items-center justify-center shadow-sm">
+                <svg
+                  className="w-7 h-7"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </div>
+            </div>
+            <div className="max-w-xs">
+              <h3 className="text-base font-bold text-slate-800">Get Compliance Report</h3>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                View violations, risk level, and complete inspection report instantly.
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   );
 }
-
-/* ─────────────────────────────────────────────────────────────
-   Section 4 — Key AI Capabilities
-   ───────────────────────────────────────────────────────────── */
-
-const CAPABILITIES = [
-  { icon: 'document_scanner', title: 'OCR & Label Detection' },
-  { icon: 'fact_check', title: 'Mandatory Declaration Detection' },
-  { icon: 'straighten', title: 'Unit & Measurement Validation' },
-  { icon: 'rule', title: 'Compliance Rule Checking' },
-  { icon: 'gpp_maybe', title: 'Risk & Violation Detection' },
-  { icon: 'summarize', title: 'AI-Generated Inspection Report' },
-];
 
 function CapabilitiesSection() {
   return (
-    <section className="border-y border-[#E8EEF7] bg-[#F7FAFF]">
-      <div className="mx-auto max-w-6xl px-4 py-14 sm:py-16">
-        <SectionHeading
-          eyebrow="What it does"
-          title="Key AI Capabilities"
-          subtitle="Advanced AI. Real compliance impact."
-        />
-
-        <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {CAPABILITIES.map((cap, i) => (
-            <div
-              key={cap.title}
-              className="home-fade-up group flex items-center gap-4 rounded-2xl border border-[#DCEBFF] bg-gradient-to-br from-[#EAF3FF] to-[#EDFAF6] p-5 shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg"
-              style={{ animationDelay: `${i * 60}ms` }}
-            >
-              <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-white text-[#1A73E8] shadow-sm transition-colors group-hover:bg-[#1A73E8] group-hover:text-white">
-                <span className="material-symbols-outlined text-[24px]">{cap.icon}</span>
-              </div>
-              <h3 className="text-sm font-bold leading-snug text-[#0B1B33] sm:text-base">
-                {cap.title}
-              </h3>
-            </div>
-          ))}
+    <section className="py-20 bg-white" data-purpose="capabilities-and-demo-section" id="demo">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Section Header */}
+        <div className="mb-12">
+          <h2 className="text-3xl font-extrabold text-slate-900">Key AI Capabilities</h2>
+          <p className="text-sm sm:text-base text-slate-500 mt-1">Advanced AI. Real compliance impact.</p>
         </div>
-      </div>
-    </section>
-  );
-}
-
-/* ─────────────────────────────────────────────────────────────
-   Section 5 — Interactive Inspection Demo
-   ───────────────────────────────────────────────────────────── */
-
-const DEMO_FIELDS = [
-  { label: 'MRP', status: 'Found', tone: 'ok' },
-  { label: 'Net Quantity', status: 'Found', tone: 'ok' },
-  { label: 'Manufacturer Details', status: 'Warning', tone: 'warn' },
-  { label: 'FSSAI License', status: 'Missing', tone: 'err' },
-  { label: 'Expiry Date', status: 'Found', tone: 'ok' },
-];
-
-const DEMO_STATS = [
-  { label: 'Passed', value: 8, icon: 'check_circle', tone: 'ok' },
-  { label: 'Warnings', value: 2, icon: 'warning', tone: 'warn' },
-  { label: 'Violation', value: 1, icon: 'cancel', tone: 'err' },
-];
-
-const DEMO_SUMMARY: { label: string; value: string; alert?: boolean }[] = [
-  { label: 'Product Name', value: 'Potato Chips' },
-  { label: 'Net Quantity', value: '50 g' },
-  { label: 'MRP', value: '₹20.00' },
-  { label: 'Manufacturer', value: 'ABC Foods Pvt. Ltd.' },
-  { label: 'FSSAI License', value: 'Missing', alert: true },
-  { label: 'Best Before', value: '11/11/2025' },
-];
-
-function DemoSection() {
-  return (
-    <section className="mx-auto max-w-6xl px-4 py-14 sm:py-16">
-      <SectionHeading
-        eyebrow="See it in action"
-        title="Live Inspection Demo"
-        subtitle="A real-style AI inspection result at a glance."
-      />
-
-      <div className="home-fade-up mt-10 rounded-3xl border border-[#E2E8F0] bg-gradient-to-br from-[#F4F9FF] to-white p-6 shadow-lg shadow-[#0B1B33]/[0.04] sm:p-8">
-        <div className="grid items-start gap-10 lg:grid-cols-[1.1fr_0.9fr_1.1fr] lg:gap-6">
-          {/* LEFT — package + detected fields */}
-          <div>
-            <div className="flex items-center gap-6">
-              <div className="relative flex aspect-[3/4] w-32 shrink-0 flex-col justify-between overflow-hidden rounded-2xl border-2 border-[#1A73E8]/40 bg-gradient-to-b from-[#FDBA74] to-[#F97316] p-3 shadow-md">
-                <div className="flex justify-between">
-                  <span className="h-2 w-2 rounded-sm bg-[#0F766E]" />
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#0F766E] text-[10px] font-black text-white">
-                    P
-                  </span>
-                </div>
-                <div className="space-y-1.5">
-                  <div className="h-1.5 rounded bg-white/50" />
-                  <div className="h-1.5 w-3/4 rounded bg-white/50" />
-                </div>
-                <div className="scanner-scan-line pointer-events-none absolute inset-x-1 h-0.5 rounded-full bg-gradient-to-r from-transparent via-[#22D3EE] to-transparent" />
-              </div>
-
-              <div className="min-w-0 flex-1 space-y-2">
-                {DEMO_FIELDS.map((f) => (
-                  <div
-                    key={f.label}
-                    className={cn(
-                      'flex items-center justify-between rounded-lg border px-3 py-2 text-sm',
-                      f.tone === 'ok' && 'border-[#BFE3D8] bg-[#F2FBF8]',
-                      f.tone === 'warn' && 'border-[#FDE68A] bg-[#FFFBEB]',
-                      f.tone === 'err' && 'border-[#FECACA] bg-[#FEF2F2]'
-                    )}
-                  >
-                    <span className="flex items-center gap-1.5 font-medium text-[#1E293B]">
-                      <span
-                        className={cn(
-                          'material-symbols-outlined text-[16px]',
-                          f.tone === 'ok' && 'text-[#0F766E]',
-                          f.tone === 'warn' && 'text-[#B45309]',
-                          f.tone === 'err' && 'text-[#DC2626]'
-                        )}
-                      >
-                        {f.tone === 'ok' && 'check_circle'}
-                        {f.tone === 'warn' && 'warning'}
-                        {f.tone === 'err' && 'cancel'}
-                      </span>
-                      {f.label}
-                    </span>
-                    <span
-                      className={cn(
-                        'text-[11px] font-semibold',
-                        f.tone === 'ok' && 'text-[#0F766E]',
-                        f.tone === 'warn' && 'text-[#B45309]',
-                        f.tone === 'err' && 'text-[#DC2626]'
-                      )}
-                    >
-                      {f.status}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* CENTER — compliance score */}
-          <div className="flex flex-col items-center">
-            <div className="relative flex size-40 items-center justify-center">
-              <svg className="size-40 -rotate-90" viewBox="0 0 100 100">
-                <circle cx="50" cy="50" r="44" fill="none" stroke="#E2E8F0" strokeWidth="9" />
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="44"
-                  fill="none"
-                  stroke="#0F766E"
-                  strokeWidth="9"
+        {/* 6 Capability Cards Row */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-14" data-purpose="capability-cards">
+          <div className="p-4 rounded-2xl bg-[#F0F5FF] border border-blue-100 flex flex-col items-center text-center">
+            <div className="w-10 h-10 rounded-xl bg-blue-100/70 text-blue-600 flex items-center justify-center mb-3">
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15"
                   strokeLinecap="round"
-                  strokeDasharray={`${0.72 * 276.46} 276.46`}
+                  strokeLinejoin="round"
                 />
               </svg>
-              <div className="absolute flex flex-col items-center">
-                <span className="text-4xl font-black text-[#0B1B33]">72%</span>
-                <span className="mt-0.5 text-xs font-semibold text-[#0F766E]">
-                  Compliant
-                </span>
-              </div>
             </div>
-
-            <div className="mt-6 flex flex-wrap justify-center gap-2.5">
-              {DEMO_STATS.map((s) => (
-                <span
-                  key={s.label}
-                  className={cn(
-                    'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold',
-                    s.tone === 'ok' && 'border-[#BFE3D8] bg-[#F2FBF8] text-[#0F766E]',
-                    s.tone === 'warn' && 'border-[#FDE68A] bg-[#FFFBEB] text-[#B45309]',
-                    s.tone === 'err' && 'border-[#FECACA] bg-[#FEF2F2] text-[#B91C1C]'
-                  )}
-                >
-                  <span className="material-symbols-outlined text-[15px]">{s.icon}</span>
-                  {s.value} {s.label}
-                </span>
-              ))}
-            </div>
+            <span className="text-xs font-bold text-slate-800 leading-tight">OCR &amp; Label Detection</span>
           </div>
-
-          {/* RIGHT — inspection summary */}
-          <div>
-            <div className="rounded-2xl border border-[#E2E8F0] bg-white p-5 shadow-sm">
-              <h3 className="flex items-center gap-2 text-sm font-bold text-[#0B1B33]">
-                <span className="material-symbols-outlined text-[18px] text-[#1A73E8]">
-                  description
-                </span>
-                Inspection Summary
-              </h3>
-              <div className="mt-4 space-y-2.5">
-                {DEMO_SUMMARY.map((row) => (
-                  <div key={row.label} className="flex justify-between gap-3 text-sm">
-                    <span className="text-[#64748B]">{row.label}</span>
-                    <span
-                      className={cn(
-                        'text-right font-semibold',
-                        row.alert ? 'text-[#DC2626]' : 'text-[#1E293B]'
-                      )}
-                    >
-                      {row.value}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <Link
-                href="/scan/new"
-                className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-[#1A73E8] py-3 text-sm font-semibold text-white shadow-lg shadow-[#1A73E8]/25 transition-all hover:-translate-y-0.5 hover:bg-[#005BBF] focus:outline-none focus:ring-2 focus:ring-[#1A73E8] focus:ring-offset-2"
+          <div className="p-4 rounded-2xl bg-[#F0FDF4] border border-emerald-100 flex flex-col items-center text-center">
+            <div className="w-10 h-10 rounded-xl bg-emerald-100/70 text-emerald-600 flex items-center justify-center mb-3">
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
               >
-                Try Live Inspection
-                <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
-              </Link>
+                <path
+                  d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+            <span className="text-xs font-bold text-slate-800 leading-tight">
+              Mandatory Declaration Detection
+            </span>
+          </div>
+          <div className="p-4 rounded-2xl bg-[#F0F5FF] border border-blue-100 flex flex-col items-center text-center">
+            <div className="w-10 h-10 rounded-xl bg-blue-100/70 text-blue-600 flex items-center justify-center mb-3">
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  d="M12 3v17.25m0 0c-1.472 0-2.882.265-4.185.75M12 20.25c1.472 0 2.882.265 4.185.75M18.75 4.97A48.416 48.416 0 0012 4.5c-2.291 0-4.545.16-6.75.47m13.5 0c1.01.143 2.01.317 3 .52m-3-.52l2.62 10.726c.122.499-.106 1.028-.589 1.202a5.988 5.988 0 01-2.031.352 5.988 5.988 0 01-2.031-.352c-.483-.174-.711-.703-.59-1.202L18.75 4.97zm-16.5.52c.99-.203 1.99-.377 3-.52m0 0l2.62 10.726c.122.499-.106 1.028-.589 1.202a5.989 5.989 0 01-2.031.352 5.989 5.989 0 01-2.031-.352c-.483-.174-.711-.703-.59-1.202L5.25 4.97z"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+            <span className="text-xs font-bold text-slate-800 leading-tight">
+              Unit &amp; Measurement Validation
+            </span>
+          </div>
+          <div className="p-4 rounded-2xl bg-[#F0FDF4] border border-emerald-100 flex flex-col items-center text-center">
+            <div className="w-10 h-10 rounded-xl bg-emerald-100/70 text-emerald-600 flex items-center justify-center mb-3">
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+            <span className="text-xs font-bold text-slate-800 leading-tight">Compliance Rule Checking</span>
+          </div>
+          <div className="p-4 rounded-2xl bg-[#FFF5F5] border border-red-100 flex flex-col items-center text-center">
+            <div className="w-10 h-10 rounded-xl bg-red-100/70 text-red-600 flex items-center justify-center mb-3">
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+            <span className="text-xs font-bold text-slate-800 leading-tight">
+              Risk &amp; Violation Detection
+            </span>
+          </div>
+          <div className="p-4 rounded-2xl bg-[#F0F5FF] border border-blue-100 flex flex-col items-center text-center">
+            <div className="w-10 h-10 rounded-xl bg-blue-100/70 text-blue-600 flex items-center justify-center mb-3">
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+            <span className="text-xs font-bold text-slate-800 leading-tight">
+              AI-Generated Inspection Report
+            </span>
+          </div>
+        </div>
+        {/* Live Inspection Dashboard Preview */}
+        <div
+          className="bg-[#F8FAFC] border border-slate-200/90 rounded-3xl p-6 lg:p-8 shadow-sm"
+          data-purpose="live-dashboard-preview"
+        >
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+            {/* Column 1: Scanned Pouch with Label Detection Callouts */}
+            <div className="lg:col-span-5 flex flex-col sm:flex-row items-center gap-4">
+              {/* Pouch Thumbnail */}
+              <div className="relative w-36 h-52 rounded-2xl overflow-hidden shadow-md shrink-0 border-2 border-dashed border-emerald-400 flex flex-col justify-center items-center select-none bg-slate-50 p-1">
+                <img
+                  src="/screen.png"
+                  alt="GoodDay Classic Masala Potato Chips"
+                  className="w-full h-full object-contain rounded-lg"
+                />
+                <div className="absolute top-1.5 left-1.5 w-3 h-3 border-t-2 border-l-2 border-emerald-400 z-20 pointer-events-none"></div>
+                <div className="absolute top-1.5 right-1.5 w-3 h-3 border-t-2 border-r-2 border-emerald-400 z-20 pointer-events-none"></div>
+                <div className="absolute bottom-1.5 left-1.5 w-3 h-3 border-b-2 border-l-2 border-emerald-400 z-20 pointer-events-none"></div>
+                <div className="absolute bottom-1.5 right-1.5 w-3 h-3 border-b-2 border-r-2 border-emerald-400 z-20 pointer-events-none"></div>
+                <div className="absolute inset-x-1.5 top-9 bottom-12 border border-emerald-400/80 bg-emerald-500/10 rounded pointer-events-none z-20"></div>
+                <div className="absolute inset-x-2 bottom-2 bg-white/95 backdrop-blur-sm rounded p-1 text-[8px] text-slate-800 leading-tight font-semibold border border-slate-200/80 shadow-sm z-20">
+                  <div className="flex justify-between">
+                    <span>MRP:</span>
+                    <span className="font-bold text-emerald-700">₹ 20.00</span>
+                  </div>
+                  <div className="flex justify-between border-t border-slate-100 pt-0.5">
+                    <span>Net Wt:</span>
+                    <span className="font-bold text-slate-900">52g</span>
+                  </div>
+                </div>
+              </div>
+              {/* Detection Pill Badges */}
+              <div className="w-full space-y-2">
+                <div className="bg-white px-3 py-1.5 rounded-xl border border-emerald-300 text-emerald-600 text-xs font-semibold flex items-center gap-1.5 shadow-sm">
+                  <span>✓</span>
+                  <span>MRP – Found (₹ 20.00)</span>
+                </div>
+                <div className="bg-white px-3 py-1.5 rounded-xl border border-emerald-300 text-emerald-600 text-xs font-semibold flex items-center gap-1.5 shadow-sm">
+                  <span>✓</span>
+                  <span>Net Quantity – Found (52 g)</span>
+                </div>
+                <div className="bg-white px-3 py-1.5 rounded-xl border border-emerald-300 text-emerald-600 text-xs font-semibold flex items-center gap-1.5 shadow-sm">
+                  <span>✓</span>
+                  <span>FSSAI License – Found (10012031000312)</span>
+                </div>
+                <div className="bg-white px-3 py-1.5 rounded-xl border border-emerald-300 text-emerald-600 text-xs font-semibold flex items-center gap-1.5 shadow-sm">
+                  <span>✓</span>
+                  <span>Batch &amp; Mfg Date – Found (12/05/2025)</span>
+                </div>
+                <div className="bg-white px-3 py-1.5 rounded-xl border border-emerald-300 text-emerald-600 text-xs font-semibold flex items-center gap-1.5 shadow-sm">
+                  <span>✓</span>
+                  <span>Ingredients &amp; Nutritional Info – Found</span>
+                </div>
+              </div>
+            </div>
+            {/* Column 2: Radial Gauge Compliance Score */}
+            <div className="lg:col-span-3 flex flex-col items-center justify-center bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
+              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-4">
+                Compliance Score
+              </h4>
+              <div className="relative w-36 h-36 rounded-full bg-emerald-500 flex items-center justify-center shadow-inner">
+                <div className="w-28 h-28 bg-white rounded-full flex flex-col items-center justify-center">
+                  <span className="text-2xl font-black text-slate-900">100%</span>
+                  <span className="text-[11px] font-semibold text-emerald-500">Compliant</span>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2 w-full mt-6 text-center">
+                <div className="bg-emerald-50 rounded-xl p-2 border border-emerald-100">
+                  <div className="text-sm font-bold text-emerald-600">✓ 10</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5 font-medium">Passed</div>
+                </div>
+                <div className="bg-slate-50 rounded-xl p-2 border border-slate-200">
+                  <div className="text-sm font-bold text-slate-600">0</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5 font-medium">Warnings</div>
+                </div>
+                <div className="bg-slate-50 rounded-xl p-2 border border-slate-200">
+                  <div className="text-sm font-bold text-slate-600">0</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5 font-medium">Violations</div>
+                </div>
+              </div>
+            </div>
+            {/* Column 3: Inspection Summary Details Table Card */}
+            <div className="lg:col-span-4 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col justify-between h-full">
+              <div>
+                <h4 className="text-sm font-bold text-slate-900 pb-3 border-b border-slate-100">
+                  Inspection Summary
+                </h4>
+                <dl className="text-xs divide-y divide-slate-100 mt-2">
+                  <div className="py-2 flex justify-between">
+                    <dt className="text-slate-500">Product Name</dt>
+                    <dd className="font-semibold text-slate-800">Classic Masala Potato Chips</dd>
+                  </div>
+                  <div className="py-2 flex justify-between">
+                    <dt className="text-slate-500">Net Quantity</dt>
+                    <dd className="font-semibold text-slate-800">52 g</dd>
+                  </div>
+                  <div className="py-2 flex justify-between">
+                    <dt className="text-slate-500">MRP</dt>
+                    <dd className="font-semibold text-slate-800">₹ 20.00</dd>
+                  </div>
+                  <div className="py-2 flex justify-between">
+                    <dt className="text-slate-500">Manufacturer</dt>
+                    <dd className="font-semibold text-slate-800">ITC Limited</dd>
+                  </div>
+                  <div className="py-2 flex justify-between">
+                    <dt className="text-slate-500">FSSAI License</dt>
+                    <dd className="font-bold text-emerald-600">10012031000312 (Valid)</dd>
+                  </div>
+                  <div className="py-2 flex justify-between">
+                    <dt className="text-slate-500">Use By</dt>
+                    <dd className="font-semibold text-slate-800">11/08/2025</dd>
+                  </div>
+                </dl>
+              </div>
+              <div className="pt-4">
+                <Link
+                  href="/scan/new"
+                  className="w-full py-2.5 px-4 rounded-xl text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 transition flex items-center justify-center gap-1.5 shadow"
+                >
+                  <span>Try Live Inspection</span>
+                  <span>→</span>
+                </Link>
+              </div>
             </div>
           </div>
         </div>
@@ -537,55 +815,76 @@ function DemoSection() {
   );
 }
 
-/* ─────────────────────────────────────────────────────────────
-   Section 6 — Final CTA
-   ───────────────────────────────────────────────────────────── */
-
-function FinalCtaSection() {
+function FooterBanner() {
   return (
-    <section className="mx-auto max-w-6xl px-4 pb-16 pt-2">
-      <div className="home-fade-up relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0B1B33] to-[#0F3A5F] px-6 py-12 text-center shadow-2xl sm:px-12">
-        <div className="pointer-events-none absolute -left-10 -top-10 h-48 w-48 rounded-full bg-[#1A73E8]/20 blur-2xl" />
-        <div className="pointer-events-none absolute -bottom-12 -right-10 h-48 w-48 rounded-full bg-[#0F766E]/20 blur-2xl" />
-
-        <div className="relative">
-          <h2 className="mx-auto max-w-2xl text-2xl font-black leading-tight text-white sm:text-3xl lg:text-4xl">
-            Turn Package Inspection
-            <br />
-            Into an Intelligent Process.
-          </h2>
-          <p className="mt-4 text-[#BFDBFE]">
-            Ensure safer products. Build a more compliant tomorrow.
-          </p>
-          <Link
-            href="/scan/new"
-            className="group mt-8 inline-flex items-center justify-center gap-2 rounded-xl bg-white px-7 py-3.5 text-sm font-bold text-[#0B1B33] shadow-lg transition-all hover:-translate-y-0.5 hover:bg-[#F1F5F9] focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-[#0B1B33]"
-          >
-            Start Your First Inspection
-            <span className="material-symbols-outlined text-[18px] transition-transform group-hover:translate-x-0.5">
-              arrow_forward
-            </span>
-          </Link>
+    <footer className="bg-[#0A2540] text-white py-12 border-t border-slate-800" data-purpose="bottom-cta-footer">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-8">
+          {/* Left Banner Content */}
+          <div className="space-y-1.5 text-center md:text-left">
+            <h3 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
+              Turn Package Inspection Into an <span className="text-emerald-400">Intelligent Process.</span>
+            </h3>
+            <p className="text-xs sm:text-sm text-slate-400">
+              Ensure safer products. Build a more compliant tomorrow.
+            </p>
+          </div>
+          {/* Center CTA Button */}
+          <div>
+            <Link
+              className="inline-flex items-center px-6 py-3 text-xs sm:text-sm font-bold text-slate-950 bg-emerald-400 hover:bg-emerald-300 active:scale-95 rounded-full shadow-lg shadow-emerald-500/20 transition duration-150"
+              href="/scan/new"
+            >
+              Start Your First Inspection
+              <svg
+                className="ml-2 w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                viewBox="0 0 24 24"
+              >
+                <path d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </Link>
+          </div>
+          {/* Right Logo and Tagline */}
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-md">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24">
+                <path
+                  d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+            <div>
+              <span className="text-lg font-extrabold tracking-tight text-white block leading-none">
+                PackIntel
+              </span>
+              <span className="text-[10px] text-slate-400 mt-1 block">
+                Safer Products. Smarter Compliance.
+              </span>
+            </div>
+          </div>
         </div>
       </div>
-    </section>
+    </footer>
   );
 }
-
-/* ─────────────────────────────────────────────────────────────
-   Home page assembly
-   ───────────────────────────────────────────────────────────── */
 
 export function HomepageView() {
   return (
-    <AppShell pageTitle="Home">
-      <div className="mx-auto flex max-w-7xl flex-col">
+    <AppShell pageTitle="Home" noPadding>
+      <div
+        className="bg-[#F8FAFC] text-slate-800 font-sans antialiased overflow-x-hidden"
+        style={{ fontFamily: '"Plus Jakarta Sans", "Inter", sans-serif' }}
+      >
         <HeroSection />
-        <WhySection />
+        <ProblemVsSolutionSection />
         <HowItWorksSection />
         <CapabilitiesSection />
-        <DemoSection />
-        <FinalCtaSection />
+        <FooterBanner />
       </div>
     </AppShell>
   );
