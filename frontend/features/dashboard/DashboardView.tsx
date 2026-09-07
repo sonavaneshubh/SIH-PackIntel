@@ -7,9 +7,6 @@ import { DashboardHeader } from './DashboardHeader';
 import { MetricCard } from './MetricCard';
 import { InspectionActivityCard } from './InspectionActivityCard';
 import { RecentInspectionsCard } from './RecentInspectionsCard';
-import { AllSetCard } from './AllSetCard';
-import { QuickActionsCard } from './QuickActionsCard';
-import { HighlightsCard } from './HighlightsCard';
 import { StatusDistributionCard } from './StatusDistributionCard';
 import { AllSetCard } from './AllSetCard';
 import { QuickActionsCard } from './QuickActionsCard';
@@ -100,14 +97,6 @@ export function DashboardView() {
             <RecentInspectionsCard items={inspections.slice(0, 4)} />
           </div>
 
-              <div className="flex min-w-0 flex-col gap-4">
-                <StatusDistributionCard stats={stats} />
-                <AllSetCard />
-                <QuickActionsCard />
-                <HighlightsCard stats={stats} complianceRate={complianceRate} weeklyChange={weeklyChange} />
-              </div>
-            </div>
-            
           <div className="flex min-w-0 flex-col gap-4">
             <StatusDistributionCard stats={stats} />
             <AllSetCard />

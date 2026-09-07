@@ -17,11 +17,13 @@ import { CONFLICT_SENSITIVE_FIELDS, parseProductInformation } from '@/types/prod
 import {
   buildPopulatedFields,
   formatDate,
+  formatExtractionSource,
   getConfidence,
   getStatus,
+  parsePipelineMeta,
   ComplianceResultWithRule,
 } from './reportUtils';
-import { ProductFieldValue, ResultPill, SectionHeading, SummaryItem } from './reportComponents';
+import { ProductFieldValue, QualityItem, ResultPill, SectionHeading, SummaryItem } from './reportComponents';
 import { cn } from '@/lib/utils';
 
 type LoadState = 'loading' | 'not_found' | 'error' | 'ready';
@@ -119,6 +121,11 @@ export function ReportView() {
     (result) => result.status === 'FAIL' || result.status === 'UNCERTAIN'
   );
   const productInformation = parseProductInformation(label?.product_information);
+  const pipelineMeta = parsePipelineMeta(label?.other_declarations);
+  const frontOcr = image?.ocr_text || '';
+  const rawOcr = backImage?.ocr_text
+    ? `${frontOcr}\n\n────────────────────\nBACK SIDE OCR\n────────────────────\n${backImage.ocr_text}`.trim()
+    : frontOcr || label?.raw_ocr_text || '';
   const populatedFields = useMemo(
     () => buildPopulatedFields(inspection, label, productInformation),
     [inspection, label, productInformation]
