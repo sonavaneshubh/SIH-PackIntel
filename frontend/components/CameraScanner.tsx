@@ -7,6 +7,9 @@ import {
   Check,
   CheckCircle2,
   CircleAlert,
+  Flashlight,
+  FlashlightOff,
+  ImagePlus,
   Redo2,
   Rotate3D,
   ShieldAlert,
@@ -30,6 +33,7 @@ export interface CameraScannerProps {
   onCaptureComplete: (capture: { front: CaptureSideResult | null; back: CaptureSideResult | null }) => void;
   onSideCaptured?: (result: CaptureSideResult) => void;
   onCameraStateChange?: (state: ScannerState) => void;
+  onUploadRequest?: () => void;
 }
 
 const TURN_DELAY_MS = 1400;
@@ -111,6 +115,7 @@ export function CameraScanner({
   onCaptureComplete,
   onSideCaptured,
   onCameraStateChange,
+  onUploadRequest,
 }: CameraScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const captureCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -123,12 +128,15 @@ export function CameraScanner({
   const scanSideRef = useRef<ScannerPhase>('front');
   const cameraAttemptRef = useRef(0);
   const cameraStartTimerRef = useRef<number | null>(null);
+  const torchOnRef = useRef(false);
 
   const [phase, setPhaseState] = useState<ScannerState>('initializing');
   const [cameraError, setCameraErrorInfo] = useState<CameraFailureInfo | null>(null);
   const [frontSide, setFrontSide] = useState<CaptureSideResult | null>(null);
   const [backSide, setBackSide] = useState<CaptureSideResult | null>(null);
   const [scanSide, setScanSideState] = useState<ScannerPhase>('front');
+  const [torchSupported, setTorchSupported] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
 
   const phaseRef = useRef<ScannerState>('initializing');
 
@@ -150,6 +158,44 @@ export function CameraScanner({
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
+    torchOnRef.current = false;
+    setTorchOn(false);
+    setTorchSupported(false);
+  }, []);
+
+  // Detects whether the active video track can drive the torch/flashlight.
+  // The check never assumes `getCapabilities().torch` exists; unsupported
+  // browsers/devices simply render no torch button.
+  const detectTorchSupport = useCallback((stream: MediaStream) => {
+    const track = stream.getVideoTracks()?.[0];
+    if (!track || typeof track.getCapabilities !== 'function') {
+      setTorchSupported(false);
+      return;
+    }
+    try {
+      const capabilities = track.getCapabilities() as MediaTrackCapabilities & { torch?: boolean };
+      setTorchSupported(capabilities.torch === true);
+    } catch {
+      setTorchSupported(false);
+    }
+  }, []);
+
+  const toggleTorch = useCallback(async () => {
+    const track = streamRef.current?.getVideoTracks()?.[0];
+    if (!track || typeof track.applyConstraints !== 'function') return;
+    const next = !torchOnRef.current;
+    try {
+      await track.applyConstraints({
+        advanced: [{ torch: next } as MediaTrackConstraintSet],
+      });
+      torchOnRef.current = next;
+      setTorchOn(next);
+    } catch {
+      // Some devices reject mid-stream torch toggles; degrade gracefully.
+      torchOnRef.current = false;
+      setTorchOn(false);
+      setTorchSupported(false);
+    }
   }, []);
 
   const startCamera = useCallback(
@@ -224,6 +270,7 @@ export function CameraScanner({
         }
 
         streamRef.current = stream;
+        detectTorchSupport(stream);
         const video = videoRef.current;
         if (video) {
           video.srcObject = stream;
@@ -274,7 +321,7 @@ export function CameraScanner({
         setPhase(info.reason === 'not_allowed' ? 'permission_denied' : 'camera_error');
       }
     },
-    [setPhase, setScanSide, stopStream]
+    [setPhase, setScanSide, stopStream, detectTorchSupport]
   );
 
   useEffect(() => {
@@ -316,12 +363,16 @@ export function CameraScanner({
   }, [setPhase]);
 
   useEffect(() => {
-    if (frontSide) frontSideRef.current = frontSide;
     if (backSide) {
       const front = frontSideRef.current;
+      // Both sides captured → release the camera so it never keeps running in
+      // the background while the review screen is shown. Mark the phase before
+      // detaching the stream so any transient video event is ignored.
+      setPhase('completed');
+      stopStream();
       onCaptureComplete({ front, back: backSide });
     }
-  }, [backSide, frontSide, onCaptureComplete]);
+  }, [backSide, frontSide, onCaptureComplete, setPhase, stopStream]);
 
   const captureSide = useCallback(
     (side: ScannerPhase) => {
@@ -416,13 +467,21 @@ export function CameraScanner({
   }, [startCamera]);
 
   const captureDisabled =
-    captureLockedRef.current || phase === 'processing' || phase === 'capturing_front' || phase === 'capturing_back';
+    captureLockedRef.current ||
+    phase === 'processing' ||
+    phase === 'capturing_front' ||
+    phase === 'capturing_back' ||
+    phase === 'completed';
   const captureLabel =
     phase === 'processing'
       ? 'Analyzing...'
-      : scanSide === 'back'
-        ? 'Capture Back Side'
-        : 'Capture Front Side';
+      : phase === 'completed'
+        ? 'Both sides captured'
+        : scanSide === 'back'
+          ? 'Capture Back Side'
+          : 'Capture Front Side';
+
+  const torchButtonLabel = torchOn ? 'Turn flashlight off' : 'Turn flashlight on';
 
   const frameOverlayActive =
     phase === 'camera_ready' ||
@@ -534,14 +593,20 @@ export function CameraScanner({
             </span>
             <p className="mt-3 text-[15px] font-bold text-white">Camera Access Blocked</p>
             <p className="mt-1.5 max-w-[320px] text-xs leading-relaxed text-[#94a3b8]">
-              Camera permission is required for scanning. Please allow camera access in your
-              browser settings and try again.
+              Camera access was denied. Open your browser or site permissions, allow Camera
+              access, then tap Retry Camera.
             </p>
             <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
-              <Button variant="outline" size="sm" onClick={retryCamera}>
+              <Button variant="outline" size="sm" onClick={retryCamera} aria-label="Retry camera">
                 <Redo2 size={14} aria-hidden="true" />
-                Try Camera Again
+                Retry Camera
               </Button>
+              {onUploadRequest && (
+                <Button variant="secondary" size="sm" onClick={onUploadRequest} aria-label="Upload image from device instead of using the camera">
+                  <ImagePlus size={14} aria-hidden="true" />
+                  Upload From Device
+                </Button>
+              )}
             </div>
           </div>
         )}
@@ -555,11 +620,17 @@ export function CameraScanner({
             <p className="mt-1.5 max-w-[320px] text-xs leading-relaxed text-[#94a3b8]">
               {cameraError?.message}
             </p>
-            <div className="mt-5">
-              <Button variant="outline" size="sm" onClick={retryCamera}>
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+              <Button variant="outline" size="sm" onClick={retryCamera} aria-label="Try camera again">
                 <Redo2 size={14} aria-hidden="true" />
                 Try Again
               </Button>
+              {onUploadRequest && (
+                <Button variant="secondary" size="sm" onClick={onUploadRequest} aria-label="Upload image from device instead">
+                  <ImagePlus size={14} aria-hidden="true" />
+                  Upload From Device
+                </Button>
+              )}
             </div>
           </div>
         )}
@@ -604,16 +675,49 @@ export function CameraScanner({
       </div>
 
       <div className="mt-4 flex flex-col items-center gap-3">
-        <Button
-          variant="primary"
-          size="lg"
-          onClick={() => captureSide(scanSideRef.current)}
-          disabled={captureDisabled}
-          className="w-full sm:w-auto"
-        >
-          <Camera size={17} aria-hidden="true" />
-          {captureLabel}
-        </Button>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-center">
+          <Button
+            variant="primary"
+            size="lg"
+            onClick={() => captureSide(scanSideRef.current)}
+            disabled={captureDisabled}
+            className="w-full sm:w-auto"
+            aria-label={captureLabel}
+          >
+            <Camera size={17} aria-hidden="true" />
+            {captureLabel}
+          </Button>
+          {torchSupported && (
+            <Button
+              variant={torchOn ? 'secondary' : 'outline'}
+              size="lg"
+              onClick={() => void toggleTorch()}
+              className="w-full sm:w-auto"
+              aria-label={torchButtonLabel}
+              aria-pressed={torchOn}
+            >
+              {torchOn ? (
+                <FlashlightOff size={17} aria-hidden="true" />
+              ) : (
+                <Flashlight size={17} aria-hidden="true" />
+              )}
+              {torchOn ? 'Flashlight On' : 'Flashlight'}
+            </Button>
+          )}
+          {onUploadRequest && (
+            <Button
+              variant="secondary"
+              size="lg"
+              onClick={onUploadRequest}
+              disabled={phase === 'processing'}
+              className="w-full sm:w-auto"
+              aria-label="Upload image from device instead of using the camera"
+            >
+              <ImagePlus size={17} aria-hidden="true" />
+              Upload From Device
+            </Button>
+          )}
+        </div>
         {phase === 'turn_package' && (
           <span className="flex items-center gap-1.5 text-xs font-semibold text-[#00bfa5]">
             <Rotate3D size={14} aria-hidden="true" />

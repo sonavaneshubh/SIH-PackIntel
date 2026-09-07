@@ -1,7 +1,57 @@
 // API Client module for Backend FastAPI integration
 import type { ProductInformation } from '@/types/product';
 
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+const LOCAL_API_BASE_URL = 'http://localhost:5000';
+
+// Loopback hosts must never be targeted by a production deployment. A leftover
+// NEXT_PUBLIC_API_URL pointing at localhost produces a clear configuration
+// error instead of a confusing "Scan Fetch Failed".
+const LOOPBACK_URL_PATTERNS: RegExp[] = [
+  /^https?:\/\/localhost(?::|\/|$)/i,
+  /^https?:\/\/127\.0\.0\.1(?::|\/|$)/,
+  /^https?:\/\/0\.0\.0\.0(?::|\/|$)/,
+];
+
+function isLoopbackUrl(url: string): boolean {
+  return LOOPBACK_URL_PATTERNS.some((pattern) => pattern.test(url));
+}
+
+function normalizeBaseUrl(url: string): string {
+  return url.trim().replace(/\/+$/, '');
+}
+
+function resolveApiBaseUrl(): string {
+  const envUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
+
+  if (envUrl) {
+    if (process.env.NODE_ENV === 'production' && isLoopbackUrl(envUrl)) {
+      return '';
+    }
+    return normalizeBaseUrl(envUrl);
+  }
+
+  // A production deployment must never silently fall back to a local server.
+  // The scanner surfaces a configuration error instead of "Scan Fetch Failed".
+  if (process.env.NODE_ENV === 'production') return '';
+
+  // Local development convenience fallback.
+  return LOCAL_API_BASE_URL;
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();
+
+export const API_CONFIG_ERROR_MESSAGE =
+  'The scan server is not reachable. Please verify that NEXT_PUBLIC_API_URL is set to the PackIntel backend URL.';
+
+export function isApiConfigured(): boolean {
+  return API_BASE_URL.length > 0;
+}
+
+export function assertApiConfigured(): void {
+  if (!isApiConfigured()) {
+    throw new Error(API_CONFIG_ERROR_MESSAGE);
+  }
+}
 
 export interface HealthResponse {
   status: string;
