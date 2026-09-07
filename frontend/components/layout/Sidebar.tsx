@@ -103,69 +103,6 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { signOut } = useAuth();
 
-  const navItems = [
-    {
-      label: "Dashboard",
-      href: "/",
-      icon: "dashboard",
-      isActive: pathname === "/" || pathname === "/dashboard",
-    },
-    {
-      label: "New Scan",
-      href: "/scan/new",
-      icon: "barcode_scanner",
-      isActive: pathname.startsWith("/scan"),
-    },
-    {
-      label: "Scan History",
-      href: "/history",
-      icon: "history",
-      isActive: pathname === "/history",
-    },
-    {
-      label: "Recent Inspections",
-      href: "/recent-inspections",
-      icon: "query_stats",
-      isActive: pathname === "/recent-inspections",
-    },
-    {
-      label: "High-Priority Inspections",
-      href: "/#high-priority",
-      icon: "warning",
-      isActive: false,
-    },
-    {
-      label: "Compliance Results",
-      href: "/results",
-      icon: "assignment_turned_in",
-      isActive: pathname === "/results",
-    },
-    {
-      label: "Rule Database",
-      href: "/rules",
-      icon: "gavel",
-      isActive: pathname === "/rules",
-    },
-    {
-      label: "Violation Analytics",
-      href: "/analytics",
-      icon: "analytics",
-      isActive: pathname === "/analytics",
-    },
-    {
-      label: "Reports",
-      href: "/reports",
-      icon: "description",
-      isActive: pathname === "/reports",
-    },
-    {
-      label: "Settings",
-      href: "/settings",
-      icon: "settings",
-      isActive: pathname === "/settings",
-    },
-  ];
-
   return (
     <>
       {/* Mobile-only backdrop */}
@@ -274,7 +211,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               <span>Support</span>
             </Link>
             <button
-              onClick={handleSignOut}
+              onClick={() => { onClose(); signOut(); }}
               className="w-full flex items-center gap-3 text-slate-400 px-3 py-2.5 rounded-lg hover:bg-[#111c20] hover:text-red-300 transition-all duration-75 text-[13px] font-semibold text-left cursor-pointer"
             >
               <span className="material-symbols-outlined text-[18px]">
@@ -287,4 +224,4 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       </aside>
     </>
   );
-});
+}
