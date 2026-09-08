@@ -309,10 +309,78 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setSession(data.session);
           setSupabaseUser(data.user);
           setSessionCookie(data.session?.access_token);
-          const profile = await loadProfileFromSupabase(data.user);
+
+          // The profiles table is the authoritative source for verification
+          // state. We read it directly here (rather than trusting JWT metadata
+          // or localStorage). If the profile row cannot be read we must NOT
+          // silently treat the user as approved — the profile being missing is
+          // itself an anomaly that must surface rather than grant access.
+          let verifiedProfile = false;
+          let status: 'pending' | 'approved' | 'rejected' = 'pending';
+          let profile = mapSupabaseUserToProfile(data.user);
+
+          try {
+            const prof = await getMyProfile();
+            if (!prof.error && prof.data && prof.data.id === data.user.id) {
+              const dbStatus =
+                (prof.data.verification_status as string) ||
+                'pending';
+              if (dbStatus === 'approved' || dbStatus === 'rejected' || dbStatus === 'pending') {
+                status = dbStatus;
+              }
+              profile = {
+                ...profile,
+                id: prof.data.id,
+                email: prof.data.email || profile.email,
+                name: prof.data.full_name || profile.name,
+                verificationStatus: status,
+              };
+              verifiedProfile = true;
+            } else {
+              // Profile read failed or returned no row: keep status = pending
+              // so we never bypass verification. Log for diagnosis.
+              console.error(
+                '[signin] profile not readable for %s: %s',
+                data.user.email,
+                prof.error || 'no profile row'
+              );
+            }
+          } catch (profErr) {
+            console.error('[signin] profile lookup threw for %s', data.user.email, profErr);
+          }
+
+          profile.verificationStatus = status;
           setUser(profile);
           setIsLoading(false);
-          const status = profile.verificationStatus || 'approved';
+
+          // Reconcile the auth token's metadata with the database so the
+          // server-side middleware (which reads the signed claims in
+          // packintel_access_token) agrees with the authoritative profile.
+          // A fresh sign-in returns a brand-new access token, so syncing the
+          // user_metadata before navigating guarantees middleware lets an
+          // approved user reach /dashboard and keeps pending/rejected blocked.
+          const jwtStatus =
+            (data.user.user_metadata?.verification_status as string) || 'pending';
+          if (status !== jwtStatus) {
+            try {
+              const { data: upd } = await supabase.auth.updateUser({
+                data: { verification_status: status },
+              });
+              if (upd?.user) {
+                setSupabaseUser(upd.user);
+                const s = await supabase.auth.getSession();
+                if (s.data.session) {
+                  setSession(s.data.session);
+                  setSessionCookie(s.data.session.access_token);
+                }
+              }
+            } catch (syncErr) {
+              // Best-effort: navigation still happens below; the DB profile
+              // remains authoritative for client routing regardless.
+              console.error('[signin] failed to sync verification metadata', syncErr);
+            }
+          }
+
           if (status === 'pending') {
             router.push('/verification-pending');
           } else if (status === 'rejected') {

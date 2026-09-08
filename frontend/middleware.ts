@@ -9,12 +9,17 @@
 //
 //   - no session       → /login
 //   - role ≠ inspector → /access-denied
-//   - pending          → /verification-pending
+//   - pending (or missing status; the JWT may be stale vs the profiles table,
+//     and an unknown status is treated as pending for safety) → /verification-pending
 //   - rejected         → /verification-rejected
 //   - approved         → allowed through
 //
-// The JWT is not cryptographically verified here (GoTrue/Supabase issues and
-// validates it); this middleware only surfaces the signed claims for routing.
+// IMPORTANT: the JWT metadata is only a snapshot taken at sign-in. After the
+// admin approves/rejects a user in the profiles table, that decision is pushed
+// into auth.users.user_metadata and the next sign-in's access token reflects it.
+// This middleware therefore guards by the signed claims, while the sign-in flow
+// (authContext) and this fallback keep an unknown/absent status treated as
+// pending so a stale or pre-verification JWT can never grant project access.
 
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -88,7 +93,7 @@ export function middleware(request: NextRequest) {
   const meta = getMeta(payload);
 
   const role = (meta.role as string) || '';
-  const verificationStatus = (meta.verification_status as string) || 'approved';
+  const verificationStatus = (meta.verification_status as string) || 'pending';
 
   if (!token || !payload) {
     const url = request.nextUrl.clone();
