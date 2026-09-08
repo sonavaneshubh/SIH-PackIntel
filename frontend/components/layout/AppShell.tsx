@@ -37,7 +37,7 @@ export function AppShell({ children, pageTitle, noPadding = false }: AppShellPro
   }, []);
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background text-on-background antialiased">
+    <div className="flex h-screen supports-[height:100dvh]:h-dvh w-full overflow-hidden bg-background text-on-background antialiased">
       {/* Sidebar — always fixed to the viewport (never scrolls with content) */}
       <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} />
 
@@ -50,14 +50,14 @@ export function AppShell({ children, pageTitle, noPadding = false }: AppShellPro
       */}
       <div
         className={cn(
-          'h-screen flex-1 overflow-y-auto flex flex-col',
+          'h-screen supports-[height:100dvh]:h-dvh flex-1 overflow-y-auto flex flex-col',
           'transition-[margin] duration-300 ease-in-out',
           // Desktop: shift content by the fixed sidebar width when open
           sidebarOpen ? 'md:ml-[260px]' : 'md:ml-0'
         )}
       >
         <TopNavBar pageTitle={pageTitle} onMenuToggle={handleMenuToggle} />
-        <main className={`bg-[#F4F7FC] flex-1 ${noPadding ? '' : 'p-4 md:p-6'}`}>
+        <main className={`bg-[#F4F7FC] ${noPadding ? '' : 'p-4 md:p-6'}`}>
           {children}
         </main>
         {!noPadding && <Footer />}

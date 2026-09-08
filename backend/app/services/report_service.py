@@ -738,7 +738,7 @@ class ReportService:
         except Exception:
             return None
 
-    @staticmethod
+    @classmethod
     def generate_inspection_report(
         cls,
         inspection_id: str,
@@ -896,22 +896,12 @@ class ReportService:
             # The artifact is still downloadable; a failed audit trail insert
             # must not fail the download request.
             pass
-        Returns download metadata for a generated inspection report artifact.
-
-        The download URL is keyed by the inspection id so the file can be
-        rebuilt (and streamed as a real attachment) by the download endpoint.
-        """
-        report_id = f"RPT-{uuid.uuid4().hex[:8].upper()}"
-        fmt = (format_type or "pdf").lower().lstrip(".")
-        download_url = f"/api/reports/download/{inspection_id}.{fmt}"
 
         return ReportGenerationResponse(
             report_id=report_id,
             inspection_id=inspection_id,
             download_url=download_url,
             generated_at=now.isoformat(),
-        )
-            generated_at=datetime.now(timezone.utc).isoformat(),
         )
 
     @staticmethod

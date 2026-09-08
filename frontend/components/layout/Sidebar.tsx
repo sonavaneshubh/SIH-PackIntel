@@ -174,7 +174,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       */}
       <aside
         className={cn(
-          "fixed left-0 top-0 z-50 h-screen w-[260px] bg-[#0b0f12] shadow-2xl",
+          "fixed left-0 top-0 z-50 h-screen supports-[height:100dvh]:h-dvh w-[260px] bg-[#0b0f12] shadow-2xl",
           "flex flex-col",
           "transition-transform duration-300 ease-in-out",
           // closed: slide fully off-screen to the left

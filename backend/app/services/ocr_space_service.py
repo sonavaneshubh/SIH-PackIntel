@@ -67,13 +67,21 @@ def _fetch_image_bytes(image_input: str) -> bytes:
         return base64.b64decode(base64_data)
 
     if image_input.startswith(("http://", "https://")):
+        max_bytes = (
+            max(1, int(getattr(settings, "MAX_IMAGE_DOWNLOAD_MB", 15))) * 1024 * 1024
+        )
         req = urllib.request.Request(
             image_input,
             headers={"User-Agent": "PackIntel-OCR-Scanner/1.0"},
         )
         try:
             with urllib.request.urlopen(req, timeout=20) as response:
-                return response.read()
+                image_bytes = response.read(max_bytes + 1)
+            if len(image_bytes) > max_bytes:
+                raise ValueError(
+                    "The downloaded image exceeds the allowed download limit "
+                    f"({max_bytes // (1024 * 1024)} MB)."
+                )
         except Exception as exc:
             # Map every download failure (expired signed URL, HTTP 400/403,
             # DNS, timeout) to ValueError so scan.py returns a clean HTTP 400

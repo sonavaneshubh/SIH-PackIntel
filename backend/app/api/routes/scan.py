@@ -17,6 +17,7 @@ from app.schemas.inspection import (
 )
 from app.schemas.product import PRODUCT_FIELDS, ProductField
 from app.core.config import settings
+from app.core.memory import log_memory
 from app.services.ai_service import AIService
 from app.services.compliance_service import ComplianceService
 from app.services.image_quality import analyze_image_quality
@@ -99,6 +100,7 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
     sides = parsed["sides"]
     meta = parsed["metadata"]
     is_upload = parsed["upload"]
+    log_memory("scan:input_parsed")
 
     logger.info(
         "Scan request received: sides=%d, upload=%s, is_imported=%s",
@@ -128,6 +130,13 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
         pil_image = side.get("pil_image")
 
         detection, quality = _detect_and_qualify(side, warnings)
+
+        # The decoded PIL copy is only needed for the detection/quality stage.
+        # Drop it before OCR so the worker is not holding a full pixel buffer
+        # (plus a second decode inside the OCR engine) for the rest of the scan.
+        if "pil_image" in side:
+            pil_image = None
+            del side["pil_image"]
 
         ocr_result = _run_ocr(side["image_ref"])
         if index == 0:
@@ -178,6 +187,7 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
         front_result.get("image_quality", "unknown"),
         ocr_failed,
     )
+    log_memory("scan:ocr_done")
 
     # ---- Gemini structured extraction from the combined OCR text ------------
     vision_used = False
@@ -320,6 +330,7 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
         front_result.get("engine", "unknown"),
         len(per_side),
     )
+    log_memory("scan:done")
     logger.info("SCAN: final extraction source = %s", extraction_source)
 
     front_side = per_side[0] if per_side else None
