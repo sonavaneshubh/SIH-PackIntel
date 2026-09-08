@@ -20,6 +20,8 @@ export type InspectionStatus = 'draft' | 'processing' | 'completed' | 'failed';
 export type OverallResult = 'pass' | 'fail' | 'review' | 'pending';
 export type ComplianceResult = 'pass' | 'fail' | 'warning' | 'not_applicable';
 export type ImageType = 'label_front' | 'label_back' | 'label_side' | 'product_full' | 'evidence_crop';
+export type UserRole = 'inspector' | 'admin';
+export type VerificationStatus = 'pending' | 'approved' | 'rejected';
 
 // Priority / risk level derived from the existing compliance fields. Critical
 // and High are considered "high-priority" for the High Priority Inspections
@@ -39,6 +41,11 @@ export interface Profile {
   employee_id: string | null;
   phone: string | null;
   avatar_url: string | null;
+  role: UserRole | null;
+  verification_status: VerificationStatus | null;
+  organization: string | null;
+  location: string | null;
+  inspector_employee_id: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
