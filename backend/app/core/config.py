@@ -9,6 +9,9 @@ class Settings(BaseSettings):
 
     SUPABASE_URL: str = "https://your-project-id.supabase.co"
     SUPABASE_SERVICE_ROLE_KEY: str = ""
+    # Name of the Supabase Storage bucket used for compliance report artifacts.
+    # Create this bucket in Supabase Storage (e.g. "inspection-reports").
+    REPORT_STORAGE_BUCKET: str = "inspection-reports"
     FRONTEND_URL: str = "http://localhost:3000"
     TESSERACT_CMD: str = ""
     VISION_PROVIDER: str = "gemini"
