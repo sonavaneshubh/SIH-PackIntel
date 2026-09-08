@@ -94,7 +94,7 @@ export default function VerificationPendingPage() {
                 <Button
                   variant="primary"
                   className="flex-1 justify-center"
-                  onClick={() => router.push('/login')}
+                  onClick={() => signOut()}
                   icon="login"
                 >
                   Go to Login
@@ -174,7 +174,7 @@ export default function VerificationPendingPage() {
                 <Button
                   variant="primary"
                   className="flex-1 justify-center"
-                  onClick={() => router.push('/login')}
+                  onClick={() => signOut()}
                   icon="arrow_back"
                 >
                   Back to Sign In
