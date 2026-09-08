@@ -51,9 +51,10 @@ const PRIMARY_NAV: NavItem[] = [
   },
   {
     label: "High-Priority Inspections",
-    href: "/#high-priority",
+    href: "/high-priority-inspections",
     icon: "warning",
-    matchHint: () => false,
+    prefetch: true,
+    matchHint: (p) => p === "/high-priority-inspections",
   },
   {
     label: "Rule Database",
@@ -115,9 +116,9 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     },
     {
       label: "High-Priority Inspections",
-      href: "/#high-priority",
+      href: "/high-priority-inspections",
       icon: "warning",
-      isActive: false,
+      isActive: pathname === "/high-priority-inspections",
     },
     {
       label: "Compliance Results",

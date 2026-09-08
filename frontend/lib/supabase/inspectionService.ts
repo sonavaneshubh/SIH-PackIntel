@@ -18,6 +18,9 @@ import {
   InspectionReportInsert,
   DashboardStats,
   ProductInformation,
+  HighPriorityInspectionRecord,
+  InspectionPriority,
+  PriorityDistribution,
 } from '@/types/database';
 
 // ─── Auth User (deduped) ──────────────────────────────────────────────────────
@@ -206,6 +209,116 @@ export async function getMyInspections(options?: {
     return { data: [], error: 'Failed to load inspection history.', count: 0 };
   }
   return { data: data || [], error: null, count: count || 0 };
+}
+
+// ─── High Priority Inspections ───────────────────────────────────────────────
+// Priority is NOT stored as its own column. It is derived from the real
+// `risk_score` persisted by the compliance engine (risk = 100 - compliance).
+// The thresholds below are the SAME ones already used across the app
+// (RiskBadge, getDashboardStats, Scan History) so this page never introduces a
+// second, conflicting severity system.
+
+export function derivePriority(riskScore: number | null | undefined): InspectionPriority {
+  const score = riskScore ?? 0;
+  if (score >= 76) return 'CRITICAL';
+  if (score >= 51) return 'HIGH';
+  if (score >= 26) return 'MEDIUM';
+  return 'LOW';
+}
+
+/**
+ * Fetches the signed-in user's completed inspections whose derived priority is
+ * Critical or High, joined with their real rule-level compliance results so the
+ * violation counts shown on the High Priority page are actual scan data.
+ */
+export async function getHighPriorityInspections(): Promise<{
+  data: HighPriorityInspectionRecord[];
+  error: string | null;
+}> {
+  const {
+    data: { user },
+    error: authError,
+  } = await getAuthUser();
+
+  if (authError || !user) {
+    return { data: [], error: 'Not authenticated.' };
+  }
+
+  const { data, error } = await supabase
+    .from('inspections')
+    .select(`
+      *,
+      compliance_results (*)
+    `)
+    .eq('inspector_id', user.id)
+    .eq('status', 'completed')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    logSupabaseError('getHighPriorityInspections', error);
+    return {
+      data: [],
+      error: `Failed to load high priority inspections: ${supabaseErrorDetail(error)}`,
+    };
+  }
+
+  const rows: HighPriorityInspectionRecord[] = (data || [])
+    .map((row: any) => {
+      const compliance_results = Array.isArray(row.compliance_results)
+        ? (row.compliance_results as ComplianceResultRow[])
+        : [];
+      const priority = derivePriority(row.risk_score ?? null);
+      return { ...(row as Inspection), compliance_results, priority };
+    })
+    .filter(
+      (row): row is HighPriorityInspectionRecord =>
+        row.priority === 'CRITICAL' || row.priority === 'HIGH'
+    );
+
+  return { data: rows, error: null };
+}
+
+/**
+ * Counts the signed-in user's scored (completed) inspections at each derived
+ * priority level. Used by the High Priority page's distribution chart so the
+ * chart and the listed deductions always reflect the same data set.
+ */
+export async function getPriorityDistribution(): Promise<{
+  data: PriorityDistribution;
+  error: string | null;
+}> {
+  const {
+    data: { user },
+    error: authError,
+  } = await getAuthUser();
+
+  const empty: PriorityDistribution = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
+
+  if (authError || !user) {
+    return { data: empty, error: 'Not authenticated.' };
+  }
+
+  const { data, error } = await supabase
+    .from('inspections')
+    .select('risk_score, status')
+    .eq('inspector_id', user.id)
+    .eq('status', 'completed');
+
+  if (error) {
+    logSupabaseError('getPriorityDistribution', error);
+    return {
+      data: empty,
+      error: `Failed to load priority distribution: ${supabaseErrorDetail(error)}`,
+    };
+  }
+
+  const distribution: PriorityDistribution = { ...empty };
+  for (const row of data || []) {
+    const priority = derivePriority(row.risk_score ?? null);
+    distribution[priority] += 1;
+  }
+
+  return { data: distribution, error: null };
 }
 
 // ─── Data & History Cleanup ───────────────────────────────────────────────────
