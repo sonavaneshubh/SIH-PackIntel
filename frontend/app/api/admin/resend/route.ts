@@ -25,6 +25,13 @@ function buildReviewUrl(request: NextRequest, token: string): string {
   return `${baseUrl.replace(/\/+$/, '')}/admin/inspector-verification/${token}`;
 }
 
+function buildActionUrl(request: NextRequest, token: string, action: 'approve' | 'reject'): string {
+  const forwardedProto = request.headers.get('x-forwarded-proto') || 'http';
+  const forwardedHost = request.headers.get('x-forwarded-host') || request.headers.get('host');
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (forwardedHost ? `${forwardedProto}://${forwardedHost}` : 'http://localhost:3000');
+  return `${baseUrl.replace(/\/+$/, '')}/api/signup/verify-action?token=${encodeURIComponent(token)}&action=${action}`;
+}
+
 export async function POST(request: NextRequest) {
   const configProblem = adminConfigError();
   if (configProblem) {
@@ -52,7 +59,7 @@ export async function POST(request: NextRequest) {
 
   const { data: profile, error: profileError } = await admin
     .from('profiles')
-    .select('id, created_at, email, full_name, designation, department, organization, location, inspector_employee_id, verification_status')
+    .select('id, created_at, email, full_name, designation, department, organization, location, phone, inspector_employee_id, verification_status')
     .eq('id', profileId)
     .maybeSingle();
 
@@ -93,11 +100,14 @@ export async function POST(request: NextRequest) {
   }
 
   if (!isEmailConfigured()) {
+    const actionApprove = buildActionUrl(request, token, 'approve');
+    const actionReject = buildActionUrl(request, token, 'reject');
     console.warn(
-      '[admin-resend] Email not configured. New review link for %s (profileId %s): %s',
+      '[admin-resend] Email not configured. Approve/Reject links for %s (profileId %s): APPROVE=%s REJECT=%s',
       profile.email,
       profileId,
-      buildReviewUrl(request, token)
+      actionApprove,
+      actionReject
     );
     return NextResponse.json({ ok: true, delivered: false });
   }
@@ -105,6 +115,8 @@ export async function POST(request: NextRequest) {
   const result = await sendAdminVerificationEmail({
     to: adminEmail,
     reviewUrl: buildReviewUrl(request, token),
+    actionApproveUrl: buildActionUrl(request, token, 'approve'),
+    actionRejectUrl: buildActionUrl(request, token, 'reject'),
     tokenExpiresAt: expiresAt,
     inspector: {
       fullName: profile.full_name || '',
@@ -116,6 +128,7 @@ export async function POST(request: NextRequest) {
       department: profile.department,
       organization: profile.organization,
       location: profile.location,
+      phone: profile.phone,
     },
   });
 

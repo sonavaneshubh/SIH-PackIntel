@@ -25,6 +25,13 @@ function buildReviewUrl(request: NextRequest, token: string): string {
   return `${baseUrl.replace(/\/+$/, '')}/admin/inspector-verification/${token}`;
 }
 
+function buildActionUrl(request: NextRequest, token: string, action: 'approve' | 'reject'): string {
+  const forwardedProto = request.headers.get('x-forwarded-proto') || 'http';
+  const forwardedHost = request.headers.get('x-forwarded-host') || request.headers.get('host');
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (forwardedHost ? `${forwardedProto}://${forwardedHost}` : 'http://localhost:3000');
+  return `${baseUrl.replace(/\/+$/, '')}/api/signup/verify-action?token=${encodeURIComponent(token)}&action=${action}`;
+}
+
 export async function POST(request: NextRequest) {
   // Misconfiguration (e.g. a placeholder SUPABASE_SERVICE_ROLE_KEY) surfaces
   // here as a clear 500 rather than a misleading 404 later in the handler.
@@ -83,7 +90,7 @@ export async function POST(request: NextRequest) {
   const profileQuery = (uid: string) =>
     admin
       .from('profiles')
-      .select('id, created_at, full_name, designation, department, organization, location, inspector_employee_id, verification_status')
+      .select('id, created_at, full_name, designation, department, organization, location, phone, inspector_employee_id, verification_status')
       .eq('id', uid)
       .maybeSingle();
 
@@ -243,11 +250,14 @@ export async function POST(request: NextRequest) {
   if (!isEmailConfigured()) {
     // Dev safety net: surface the would-be link so the flow stays testable
     // without throwing away the registration.
+    const actionApprove = buildActionUrl(request, token, 'approve');
+    const actionReject = buildActionUrl(request, token, 'reject');
     console.warn(
-      '[admin-notify] Email not configured. Review link for %s (userId %s): %s',
+      '[admin-notify] Email not configured. Approve/Reject links for %s (userId %s): APPROVE=%s REJECT=%s',
       email || userId,
       userId,
-      buildReviewUrl(request, token)
+      actionApprove,
+      actionReject
     );
     return NextResponse.json({ ok: true, delivered: false });
   }
@@ -255,6 +265,8 @@ export async function POST(request: NextRequest) {
   const result = await sendAdminVerificationEmail({
     to: adminEmail,
     reviewUrl: buildReviewUrl(request, token),
+    actionApproveUrl: buildActionUrl(request, token, 'approve'),
+    actionRejectUrl: buildActionUrl(request, token, 'reject'),
     tokenExpiresAt: expiresAt,
     inspector: {
       fullName,
@@ -266,6 +278,7 @@ export async function POST(request: NextRequest) {
       department: profile.department,
       organization: profile.organization,
       location: profile.location,
+      phone: (typeof authUser?.user_metadata?.phone === 'string' ? authUser.user_metadata.phone : null) || null,
     },
   });
 

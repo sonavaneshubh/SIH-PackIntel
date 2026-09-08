@@ -4,6 +4,8 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/authContext';
+import { getMyProfile } from '@/lib/supabase/inspectionService';
+import { supabase } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/Button';
 
 export function LoginForm() {
@@ -17,18 +19,59 @@ export function LoginForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDemoSubmitting, setIsDemoSubmitting] = useState(false);
 
-  // If already authenticated, route by verification status
+  // If already authenticated, route by the CURRENT database verification status
+  // (authoritative). The in-memory `user.verificationStatus` comes from the auth
+  // session snapshot (JWT metadata), which stays "pending" even after the admin
+  // approves the inspector in the profiles table. Reading the profile from the
+  // database is what lets an approved user leave /verification-pending instead
+  // of being bounced straight back by this effect.
   React.useEffect(() => {
-    if (user && !authLoading) {
-      const status = user.verificationStatus || 'approved';
+    if (!user || authLoading) return;
+    let cancelled = false;
+
+    (async () => {
+      const { data } = await getMyProfile();
+      if (cancelled) return;
+
+      const status: 'pending' | 'approved' | 'rejected' =
+        data?.verification_status || user.verificationStatus || 'approved';
+
       if (status === 'pending') {
         router.replace('/verification-pending');
-      } else if (status === 'rejected') {
-        router.replace('/verification-rejected');
-      } else {
-        router.replace('/dashboard');
+        return;
       }
-    }
+      if (status === 'rejected') {
+        router.replace('/verification-rejected');
+        return;
+      }
+
+      // Approved: refresh the session claims before navigating to /dashboard so
+      // the packintel_access_token cookie (read by middleware.ts) no longer
+      // claims "pending". updateUser() issues a fresh access token whose
+      // user_metadata reflects the database state.
+      try {
+        const current = await supabase.auth.getSession();
+        if (
+          current.data.session?.user.user_metadata?.['verification_status'] !== 'approved'
+        ) {
+          await supabase.auth.updateUser({ data: { verification_status: 'approved' } });
+        }
+        const fresh = await supabase.auth.getSession();
+        const token =
+          fresh.data.session?.access_token || current.data.session?.access_token;
+        if (typeof document !== 'undefined' && token) {
+          document.cookie = `packintel_access_token=${encodeURIComponent(token)}; path=/; SameSite=Lax; Max-Age=604800`;
+        }
+      } catch {
+        // Best-effort sync; still attempt navigation with the current claims.
+      }
+      if (cancelled) return;
+      router.replace('/dashboard');
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [user, authLoading, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {

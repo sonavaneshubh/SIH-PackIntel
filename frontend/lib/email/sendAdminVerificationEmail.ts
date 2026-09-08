@@ -3,6 +3,8 @@ const RESEND_API = 'https://api.resend.com/emails';
 export interface AdminVerificationEmailPayload {
   to: string;
   reviewUrl: string;
+  actionApproveUrl: string;
+  actionRejectUrl: string;
   tokenExpiresAt: string;
   inspector: {
     fullName: string;
@@ -14,6 +16,7 @@ export interface AdminVerificationEmailPayload {
     department?: string | null;
     organization?: string | null;
     location?: string | null;
+    phone?: string | null;
   };
 }
 
@@ -56,7 +59,8 @@ function formatDateTime(value: string | undefined): string {
 
 export function buildAdminVerificationEmailHtml({
   inspector,
-  reviewUrl,
+  actionApproveUrl,
+  actionRejectUrl,
   tokenExpiresAt,
 }: AdminVerificationEmailPayload): string {
   const registeredAt = formatDateTime(inspector.registeredAt);
@@ -70,31 +74,39 @@ export function buildAdminVerificationEmailHtml({
       <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;max-width:100%;">
         <tr><td style="background:#0e7490;padding:20px 24px;color:#ffffff;">
           <div style="font-size:20px;font-weight:700;letter-spacing:.5px;">PackIntel</div>
-          <div style="font-size:13px;opacity:.85;">New User Registration — Notification</div>
+          <div style="font-size:13px;opacity:.85;">New Inspector Registration — Action Required</div>
         </td></tr>
         <tr><td style="padding:24px;">
-          <h1 style="margin:0 0 16px;font-size:18px;font-weight:700;color:#0f172a;">New User Registration</h1>
+          <h1 style="margin:0 0 16px;font-size:18px;font-weight:700;color:#0f172a;">New Inspector Registration</h1>
           <p style="margin:0 0 16px;color:#334155;font-size:15px;line-height:1.6;">Hello PackIntel Admin,</p>
-          <p style="margin:0 0 16px;color:#334155;font-size:15px;line-height:1.6;">A new user has successfully registered on the PackIntel platform.</p>
+          <p style="margin:0 0 16px;color:#334155;font-size:15px;line-height:1.6;">A new inspector has registered on the PackIntel platform. Please review the details below and approve or reject the registration.</p>
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;margin:0 0 20px;">
             ${row('Name', inspector.fullName)}
-            ${row('Email', inspector.email)}
-            ${row('User ID', inspector.userId)}
-            ${row('Registration Date and Time', registeredAt)}
             ${row('Inspector ID', inspector.employeeId)}
+            ${row('Email', inspector.email)}
+            ${row('Phone', inspector.phone)}
             ${row('Designation', inspector.designation)}
             ${row('Department', inspector.department)}
             ${row('Organization', inspector.organization)}
             ${row('Location', inspector.location)}
+            ${row('Registered', registeredAt)}
           </table>
-          <div style="background:#ecfeff;border:1px solid #a5f3fc;border-radius:8px;padding:14px 16px;margin:0 0 20px;color:#155e75;font-size:13px;">
-            The user has successfully completed the registration process. A review link is valid for 24 hours (expires ${escapeHtml(expires)}). You must be signed in with an admin account to approve or reject the registration. If the link expires, request a new one from the admin Settings page.
+          <div style="background:#ecfeff;border:1px solid #a5f3fc;border-radius:8px;padding:14px 16px;margin:0 0 24px;color:#155e75;font-size:13px;">
+            These action links are valid for 24 hours (expire ${escapeHtml(expires)}). If the links expire, request a new email from the admin Settings page.
           </div>
-          <p style="margin:20px 0 12px;text-align:center;">
-            <a href="${escapeHtml(reviewUrl)}" style="display:inline-block;background:#0e7490;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;font-size:15px;font-weight:600;">Review ${name}</a>
-          </p>
-          <p style="margin:0;color:#64748b;font-size:12px;text-align:center;">If the button does not work, copy and paste this link into your browser:<br/><span style="word-break:break-all;color:#155e75;">${escapeHtml(reviewUrl)}</span></p>
-          <p style="margin:20px 0 0;color:#334155;font-size:15px;line-height:1.6;">Please review the user account from the PackIntel administration system if further action is required.</p>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 16px;">
+            <tr>
+              <td align="center" style="padding:0 4px;">
+                <a href="${escapeHtml(actionApproveUrl)}" style="display:block;background:#16a34a;color:#ffffff;text-decoration:none;padding:14px 24px;border-radius:8px;font-size:15px;font-weight:700;text-align:center;">&#10003;&ensp;ACCEPT INSPECTOR</a>
+              </td>
+              <td align="center" style="padding:0 4px;">
+                <a href="${escapeHtml(actionRejectUrl)}" style="display:block;background:#dc2626;color:#ffffff;text-decoration:none;padding:14px 24px;border-radius:8px;font-size:15px;font-weight:700;text-align:center;">&#10007;&ensp;REJECT INSPECTOR</a>
+              </td>
+            </tr>
+          </table>
+          <p style="margin:0 0 8px;color:#64748b;font-size:12px;text-align:center;">If the buttons do not work, copy and paste one of these links into your browser:</p>
+          <p style="margin:0 0 4px;color:#64748b;font-size:12px;text-align:center;"><span style="color:#16a34a;font-weight:600;">Approve:</span> <span style="word-break:break-all;color:#155e75;">${escapeHtml(actionApproveUrl)}</span></p>
+          <p style="margin:0 0 16px;color:#64748b;font-size:12px;text-align:center;"><span style="color:#dc2626;font-weight:600;">Reject:</span> <span style="word-break:break-all;color:#155e75;">${escapeHtml(actionRejectUrl)}</span></p>
           <p style="margin:20px 0 0;color:#334155;font-size:15px;line-height:1.6;">Regards,<br/>PackIntel System<br/>Automated Notification</p>
         </td></tr>
         <tr><td style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:14px 24px;color:#64748b;font-size:12px;text-align:center;">
@@ -109,40 +121,38 @@ export function buildAdminVerificationEmailHtml({
 
 export function buildAdminVerificationEmailText({
   inspector,
-  reviewUrl,
+  actionApproveUrl,
+  actionRejectUrl,
   tokenExpiresAt,
 }: AdminVerificationEmailPayload): string {
   const lines: string[] = [];
-  lines.push('New User Registration – PackIntel');
+  lines.push('New Inspector Registration – PackIntel');
   lines.push('');
   lines.push('Hello PackIntel Admin,');
   lines.push('');
-  lines.push('A new user has successfully registered on the PackIntel platform.');
+  lines.push('A new inspector has registered on the PackIntel platform. Please review the details below and approve or reject the registration.');
   lines.push('');
-  lines.push('User Details:');
+  lines.push('Inspector Details:');
   lines.push(`  Name: ${inspector.fullName || '-'}`);
+  lines.push(`  Inspector ID: ${inspector.employeeId || '-'}`);
   lines.push(`  Email: ${inspector.email || '-'}`);
-  lines.push(`  User ID: ${inspector.userId || '-'}`);
-  const registeredAt = formatDateTime(inspector.registeredAt);
-  if (registeredAt) lines.push(`  Registration Date: ${registeredAt}`);
-  if (inspector.employeeId) lines.push(`  Inspector ID: ${inspector.employeeId}`);
+  if (inspector.phone) lines.push(`  Phone: ${inspector.phone}`);
   if (inspector.designation) lines.push(`  Designation: ${inspector.designation}`);
   if (inspector.department) lines.push(`  Department: ${inspector.department}`);
   if (inspector.organization) lines.push(`  Organization: ${inspector.organization}`);
   if (inspector.location) lines.push(`  Location: ${inspector.location}`);
-  lines.push('');
-  lines.push('The user has successfully completed the registration process.');
-  lines.push('');
-  lines.push('Please review the user account from the PackIntel administration system if further action is required.');
+  const registeredAt = formatDateTime(inspector.registeredAt);
+  if (registeredAt) lines.push(`  Registered: ${registeredAt}`);
   lines.push('');
   const expires = formatDateTime(tokenExpiresAt);
-  lines.push(`Review link: ${reviewUrl}${expires ? ` (valid for 24 hours; expires ${expires})` : ' (valid for 24 hours)'}`);
+  lines.push(`These action links expire in 24 hours${expires ? ` (at ${expires})` : ''}.`);
+  lines.push('');
+  lines.push(`APPROVE: ${actionApproveUrl}`);
+  lines.push(`REJECT:  ${actionRejectUrl}`);
   lines.push('');
   lines.push('Regards,');
   lines.push('PackIntel System');
   lines.push('Automated Notification');
-  lines.push('');
-  lines.push('This is an automated notification from PackIntel.');
   return lines.join('\n');
 }
 
