@@ -70,6 +70,22 @@ app.add_middleware(
 )
 
 
+def _cors_headers(request: Request) -> dict:
+    """
+    Best-effort CORS headers for locally-built error responses.
+    The real CORSMiddleware normally adds these; this is a safety net so the
+    browser can read structured error bodies instead of reporting a bare CORS
+    failure when the handler itself raised.
+    """
+    origin = request.headers.get("origin") or ""
+    if origin and (origin in origins or settings.FRONTEND_URL):
+        return {
+            "Access-Control-Allow-Origin": origin,
+            "Vary": "Origin",
+        }
+    return {}
+
+
 # ============================================================
 # EXCEPTION HANDLERS
 # ============================================================
@@ -98,6 +114,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
         content={"detail": clean_errors},
+        headers=_cors_headers(request),
     )
 
 
@@ -111,6 +128,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"detail": f"Internal server error: {str(exc)}"},
+        headers=_cors_headers(request),
     )
 
 
