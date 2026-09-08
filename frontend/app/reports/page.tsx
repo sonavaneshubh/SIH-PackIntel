@@ -8,6 +8,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { StatusBadge } from '@/components/ui/Badge';
 import { getMyComplianceReports } from '@/lib/supabase/inspectionService';
 import { buildComplianceReportRow, generateComplianceReport } from '@/lib/reporting';
+import { API_BASE_URL } from '@/lib/api';
 import { ComplianceReportSummary, JoinedInspection } from '@/types/report';
 import { cn } from '@/lib/utils';
 
@@ -86,9 +87,11 @@ export default function ReportsPage() {
       if (result.error || !result.downloadUrl) {
         throw new Error(result.error || 'Report generation did not return a download URL.');
       }
+      const downloadUrl = result.downloadUrl.startsWith('http')
+        ? result.downloadUrl
+        : `${API_BASE_URL}${result.downloadUrl}`;
       const anchor = document.createElement('a');
-      anchor.href = result.downloadUrl;
-      anchor.target = '_blank';
+      anchor.href = downloadUrl;
       anchor.rel = 'noopener noreferrer';
       document.body.appendChild(anchor);
       anchor.click();
