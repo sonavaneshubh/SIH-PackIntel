@@ -36,13 +36,6 @@ const PRIMARY_NAV: NavItem[] = [
     matchHint: (p) => p === "/dashboard",
   },
   {
-    label: "Inspector Workspace",
-    href: "/inspector/dashboard",
-    icon: "verified_user",
-    prefetch: true,
-    matchHint: (p) => p.startsWith("/inspector"),
-  },
-  {
     label: "New Scan",
     href: "/scan/new",
     icon: "barcode_scanner",
@@ -85,6 +78,13 @@ const PRIMARY_NAV: NavItem[] = [
     matchHint: (p) => p === "/reports",
   },
   {
+    label: "Inspector Workspace",
+    href: "/inspector/dashboard",
+    icon: "verified_user",
+    prefetch: true,
+    matchHint: (p) => p.startsWith("/inspector"),
+  },
+  {
     label: "Settings",
     href: "/settings",
     icon: "settings",
@@ -101,6 +101,13 @@ const LIMITED_NAV: NavItem[] = [
     icon: "home",
     prefetch: true,
     matchHint: (p) => p === "/",
+  },
+  {
+    label: "Inspector Workspace",
+    href: "/inspector/dashboard",
+    icon: "verified_user",
+    prefetch: true,
+    matchHint: (p) => p.startsWith("/inspector"),
   },
   {
     label: "Settings",
