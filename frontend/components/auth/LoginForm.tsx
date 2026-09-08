@@ -17,10 +17,17 @@ export function LoginForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDemoSubmitting, setIsDemoSubmitting] = useState(false);
 
-  // If already authenticated, redirect to dashboard
+  // If already authenticated, route by verification status
   React.useEffect(() => {
     if (user && !authLoading) {
-      router.replace('/');
+      const status = user.verificationStatus || 'approved';
+      if (status === 'pending') {
+        router.replace('/verification-pending');
+      } else if (status === 'rejected') {
+        router.replace('/verification-rejected');
+      } else {
+        router.replace('/dashboard');
+      }
     }
   }, [user, authLoading, router]);
 

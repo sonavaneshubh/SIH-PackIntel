@@ -12,6 +12,7 @@ import { deleteAllMyInspections } from '@/lib/supabase/inspectionService';
 
 type TabId =
   | 'profile'
+  | 'verification'
   | 'scan_ocr'
   | 'compliance'
   | 'reports'
@@ -66,6 +67,7 @@ interface ComplianceSettings {
 
 const TABS: Tab[] = [
   { id: 'profile', label: 'Profile & Account', icon: 'account_circle' },
+  { id: 'verification', label: 'Inspector Verification', icon: 'verified_user' },
   { id: 'scan_ocr', label: 'Scan & OCR', icon: 'document_scanner' },
   { id: 'compliance', label: 'Compliance & Rules', icon: 'gavel' },
   { id: 'reports', label: 'Report Settings', icon: 'description' },
@@ -185,8 +187,10 @@ function SaveBanner({ saved }: { saved: boolean }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
-  const { user, supabaseUser, signOut, updatePassword, isSupabaseConnected } = useAuth();
-  const isAdmin = ADMIN_ROLES.some(r => user?.role?.includes(r));
+  const { user, supabaseUser, session, signOut, updatePassword, isSupabaseConnected } = useAuth();
+  const isAdmin =
+    user?.platformRole === 'admin' ||
+    ADMIN_ROLES.some(r => user?.role?.includes(r));
   const isDemo = user?.isDemo ?? false;
 
   // Active tab
@@ -267,6 +271,15 @@ export default function SettingsPage() {
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
   const [dbOnline, setDbOnline] = useState<boolean | null>(null);
 
+  // ── Inspector Verification State (admin) ──────────────────────────────────
+  const [verifications, setVerifications] = useState<any[]>([]);
+  const [verifLoading, setVerifLoading] = useState(false);
+  const [verifAction, setVerifAction] = useState<string | null>(null);
+  const [verifMsg, setVerifMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [verifRejectingId, setVerifRejectingId] = useState<string | null>(null);
+  const [verifRejectionReason, setVerifRejectionReason] = useState('');
+  const [verifResendId, setVerifResendId] = useState<string | null>(null);
+
   // ─── Effects ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -308,6 +321,104 @@ export default function SettingsPage() {
       }
     })();
   }, [isSupabaseConnected]);
+
+  // Load pending inspector verification requests (admin only)
+  useEffect(() => {
+    if (!isAdmin || !isSupabaseConnected) return;
+    (async () => {
+      setVerifLoading(true);
+      setVerifMsg(null);
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, full_name, email, designation, department, organization, location, phone, inspector_employee_id, employee_id, created_at')
+          .eq('verification_status', 'pending')
+          .or('role.in.(inspector),role.is.null')
+          .order('created_at', { ascending: false });
+        if (error) {
+          setVerifMsg({ type: 'error', text: `Failed to load verification requests: ${error.message}` });
+        } else {
+          setVerifications(data || []);
+        }
+      } catch (e: any) {
+        setVerifMsg({ type: 'error', text: e?.message || 'Failed to load verification requests.' });
+      } finally {
+        setVerifLoading(false);
+      }
+    })();
+  }, [isAdmin, isSupabaseConnected]);
+
+  const handleVerificationAction = async (profileId: string, decision: 'approve' | 'reject') => {
+    if (!isSupabaseConnected || !isAdmin) return;
+    if (decision === 'reject' && !verifRejectionReason.trim()) return;
+    setVerifAction(profileId);
+    setVerifMsg(null);
+    try {
+      // Decisions go through the server API, which re-verifies the caller is
+      // a real admin and records verified_at / verified_by / rejection_reason.
+      const res = await fetch('/api/admin/verify', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session?.access_token ?? ''}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          profileId,
+          action: decision,
+          rejectionReason: decision === 'reject' ? verifRejectionReason.trim() : undefined,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.ok) {
+        setVerifMsg({ type: 'error', text: body?.error || 'Failed to update verification status.' });
+        return;
+      }
+      setVerifications(prev => prev.filter(v => v.id !== profileId));
+      setVerifRejectingId(null);
+      setVerifRejectionReason('');
+      setVerifMsg({
+        type: 'success',
+        text: decision === 'approve'
+          ? 'Inspector approved. They can now sign in and access inspection tools.'
+          : 'Inspector rejected. They will see the rejection reason on sign in.',
+      });
+    } catch {
+      setVerifMsg({ type: 'error', text: 'Network error. Failed to update verification status.' });
+    } finally {
+      setVerifAction(null);
+    }
+  };
+
+  const handleResendVerificationEmail = async (profileId: string) => {
+    if (!isSupabaseConnected || !isAdmin) return;
+    setVerifResendId(profileId);
+    setVerifMsg(null);
+    try {
+      const res = await fetch('/api/admin/resend', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session?.access_token ?? ''}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ profileId }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.ok) {
+        setVerifMsg({ type: 'error', text: body?.error || 'Failed to resend the admin email.' });
+        return;
+      }
+      setVerifMsg({
+        type: 'success',
+        text: body.delivered === false
+          ? 'A review link was regenerated, but email delivery failed (check email configuration).'
+          : 'Verification email resent. The link expires after 24 hours.',
+      });
+    } catch {
+      setVerifMsg({ type: 'error', text: 'Network error. Failed to resend the admin email.' });
+    } finally {
+      setVerifResendId(null);
+    }
+  };
 
   // Load persisted settings from localStorage
   useEffect(() => {
@@ -598,6 +709,153 @@ export default function SettingsPage() {
       </SectionCard>
     </div>
   );
+
+  const renderVerification = () => {
+    if (!isAdmin) {
+      return (
+        <SectionCard title="Inspector Verification" description="Restricted to system administrators" icon="verified_user">
+          <div className="flex items-start gap-2 px-4 py-3 bg-warning-container border border-warning/30 rounded-xl text-xs text-on-surface">
+            <span className="material-symbols-outlined text-[16px] text-warning shrink-0 mt-0.5">lock</span>
+            <span>
+              <strong>Admin access only.</strong> The ability to approve or reject inspector registrations is
+              restricted to accounts with the <strong>admin</strong> role. Contact your system administrator.
+            </span>
+          </div>
+        </SectionCard>
+      );
+    }
+
+    if (!isSupabaseConnected) {
+      return (
+        <SectionCard title="Inspector Verification" description="Approval workflow for new inspector accounts" icon="verified_user">
+          <p className="text-xs text-on-surface-variant">
+            Verification requires a Supabase connection. In demo mode there are no pending registrations to review.
+          </p>
+        </SectionCard>
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        <SectionCard title="Pending Inspector Registrations" description="Review and approve officer registration requests" icon="how_to_reg">
+          {verifMsg && (
+            <div className={`mb-4 px-3 py-2 rounded-lg text-xs font-medium ${verifMsg.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-error-container text-on-error-container border border-error/20'}`}>
+              {verifMsg.text}
+            </div>
+          )}
+
+          {verifLoading ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-10">
+              <span className="material-symbols-outlined animate-spin text-3xl text-primary">autorenew</span>
+              <p className="text-xs text-on-surface-variant">Loading verification requests…</p>
+            </div>
+          ) : verifications.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+              <span className="material-symbols-outlined text-[32px] text-green-600">task_alt</span>
+              <p className="text-sm font-semibold text-on-surface">No pending registrations</p>
+              <p className="text-xs text-on-surface-variant">All inspector accounts have been reviewed.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {verifications.map((v) => (
+                <div key={v.id} className="rounded-xl border border-outline-variant bg-surface-container-lowest p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-on-surface truncate">{v.full_name || 'Unnamed Officer'}</p>
+                      <p className="text-[11px] text-on-surface-variant">{v.email}</p>
+                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-on-surface-variant">
+                        <span><span className="font-semibold text-on-surface">Designation:</span> {v.designation || '—'}</span>
+                        <span><span className="font-semibold text-on-surface">Dept:</span> {v.department || '—'}</span>
+                        <span><span className="font-semibold text-on-surface">Org:</span> {v.organization || '—'}</span>
+                        <span><span className="font-semibold text-on-surface">Location:</span> {v.location || '—'}</span>
+                        <span><span className="font-semibold text-on-surface">Inspector ID:</span> {v.inspector_employee_id || v.employee_id || '—'}</span>
+                        <span><span className="font-semibold text-on-surface">Phone:</span> {v.phone || '—'}</span>
+                      </div>
+                      <p className="mt-2 text-[10px] text-outline">
+                        Registered {v.created_at ? new Date(v.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        icon="check"
+                        disabled={verifAction !== null || verifResendId !== null}
+                        onClick={() => handleVerificationAction(v.id, 'approve')}
+                      >
+                        {verifAction === v.id ? 'Saving…' : 'Approve'}
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        icon="close"
+                        disabled={verifAction !== null || verifResendId !== null}
+                        onClick={() =>
+                          setVerifRejectingId(verifRejectingId === v.id ? null : v.id)
+                        }
+                      >
+                        Reject
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        icon="mail"
+                        disabled={verifAction !== null || verifResendId !== null}
+                        onClick={() => handleResendVerificationEmail(v.id)}
+                      >
+                        {verifResendId === v.id ? 'Sending…' : 'Resend email'}
+                      </Button>
+                    </div>
+                  </div>
+                  {verifRejectingId === v.id && (
+                    <div className="mt-3 rounded-lg border border-outline-variant bg-surface-container-low p-3">
+                      <label className="mb-1.5 block text-[11px] font-semibold text-on-surface">
+                        Rejection reason <span className="text-error">*</span>
+                      </label>
+                      <textarea
+                        value={verifRejectionReason}
+                        onChange={(e) => setVerifRejectionReason(e.target.value)}
+                        rows={3}
+                        maxLength={500}
+                        placeholder="e.g. Unable to verify the inspector ID with the Legal Metrology Department."
+                        className="w-full rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2 text-xs text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <span className="text-[10px] text-on-surface-variant">
+                          {verifRejectionReason.length}/500
+                        </span>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setVerifRejectingId(null);
+                              setVerifRejectionReason('');
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            variant="danger"
+                            size="sm"
+                            icon="close"
+                            disabled={!verifRejectionReason.trim() || verifAction !== null}
+                            onClick={() => handleVerificationAction(v.id, 'reject')}
+                          >
+                            {verifAction === v.id ? 'Saving…' : 'Confirm reject'}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </SectionCard>
+      </div>
+    );
+  };
 
   const renderScanOCR = () => (
     <div className="space-y-4">
@@ -1008,6 +1266,7 @@ export default function SettingsPage() {
 
   const tabContent: Record<TabId, React.ReactNode> = {
     profile: renderProfile(),
+    verification: renderVerification(),
     scan_ocr: renderScanOCR(),
     compliance: renderCompliance(),
     reports: renderReports(),

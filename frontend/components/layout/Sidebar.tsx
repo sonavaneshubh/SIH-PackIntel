@@ -36,6 +36,13 @@ const PRIMARY_NAV: NavItem[] = [
     matchHint: (p) => p === "/dashboard",
   },
   {
+    label: "Inspector Workspace",
+    href: "/inspector/dashboard",
+    icon: "verified_user",
+    prefetch: true,
+    matchHint: (p) => p.startsWith("/inspector"),
+  },
+  {
     label: "New Scan",
     href: "/scan/new",
     icon: "barcode_scanner",
@@ -99,9 +106,38 @@ const PRIMARY_NAV: NavItem[] = [
   },
 ];
 
+// Minimal navigation shown while an account has not been approved yet.
+const LIMITED_NAV: NavItem[] = [
+  {
+    label: "Home",
+    href: "/",
+    icon: "home",
+    prefetch: true,
+    matchHint: (p) => p === "/",
+  },
+  {
+    label: "Settings",
+    href: "/settings",
+    icon: "settings",
+    prefetch: false,
+    matchHint: (p) => p === "/settings",
+  },
+  {
+    label: "Support",
+    href: "/support",
+    icon: "contact_support",
+    prefetch: false,
+    matchHint: (p) => p === "/support",
+  },
+];
+
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
+
+  const verificationStatus = user?.verificationStatus || 'approved';
+  const isApprovedInspector = verificationStatus === 'approved';
+  const navItems = isApprovedInspector ? PRIMARY_NAV : LIMITED_NAV;
 
   return (
     <>
@@ -165,7 +201,17 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
           {/* Navigation Items — internal scroll only (scrollbar hidden) */}
           <nav className="no-scrollbar flex-1 overflow-y-auto px-3 space-y-0.5">
-            {PRIMARY_NAV.map((item) => {
+            {!isApprovedInspector && (
+              <div className="mx-1 mb-2 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
+                <span className="material-symbols-outlined text-[16px] text-amber-400 shrink-0 mt-0.5">
+                  hourglass_top
+                </span>
+                <p className="text-[11px] font-semibold text-amber-200 leading-snug">
+                  Account {verificationStatus}. Inspection tools unlock after administrator approval.
+                </p>
+              </div>
+            )}
+            {navItems.map((item) => {
               const isActive = item.matchHint ? item.matchHint(pathname) : item.href === pathname;
               return (
                 <Link

@@ -11,10 +11,30 @@ export interface InspectorProfile {
   email: string;
   name: string;
   role: string;
+  // Machine role from profiles.role / auth user_metadata.role:
+  // 'inspector' | 'admin' (distinct from the free-text display designation).
+  platformRole?: string;
   department: string;
   employeeId?: string | null;
   avatarUrl?: string | null;
+  verificationStatus?: 'pending' | 'approved' | 'rejected';
+  organization?: string | null;
+  location?: string | null;
+  inspectorEmployeeId?: string | null;
   isDemo?: boolean;
+}
+
+export interface SignUpCredentials {
+  email: string;
+  password: string;
+  fullName?: string;
+  department?: string;
+  designation?: string;
+  employeeId?: string;
+  phone?: string;
+  organization?: string;
+  location?: string;
+  inspectorEmployeeId?: string;
 }
 
 interface AuthContextType {
@@ -24,7 +44,7 @@ interface AuthContextType {
   isLoading: boolean;
   isSupabaseConnected: boolean;
   signIn: (credentials: { email: string; password: string }) => Promise<{ success: boolean; error?: string }>;
-  signUp: (credentials: { email: string; password: string; fullName?: string }) => Promise<{ success: boolean; error?: string }>;
+  signUp: (credentials: SignUpCredentials) => Promise<{ success: boolean; error?: string }>;
   signInWithDemo: () => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
@@ -36,7 +56,11 @@ const DEMO_INSPECTOR: InspectorProfile = {
   email: 'inspector.metrology@gov.in',
   name: 'Compliance Officer (Legal Metrology)',
   role: 'Senior Legal Metrology Inspector',
+  platformRole: 'admin',
   department: 'Dept. of Consumer Affairs, Legal Metrology Division',
+  verificationStatus: 'approved',
+  organization: 'Dept. of Consumer Affairs',
+  location: 'New Delhi',
   isDemo: true,
 };
 
@@ -61,17 +85,56 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Pro
 
 const AUTH_TIMEOUT_MS = 5000;
 
+// The Supabase JS client stores the session in localStorage, which the Next.js
+// middleware (server-side) cannot read. Mirror the access token JWT into a
+// regular cookie so the middleware can decode user_metadata (role +
+// verification_status) and enforce server-side route protection. The demo
+// account has no Supabase token, so it sets its own marker cookie instead.
+const SESSION_COOKIE = 'packintel_access_token';
+const DEMO_COOKIE = 'packintel_demo';
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
+
+function setSessionCookie(token: string | null | undefined): void {
+  if (typeof document === 'undefined') return;
+  if (token) {
+    document.cookie = `${SESSION_COOKIE}=${encodeURIComponent(token)}; path=/; SameSite=Lax; Max-Age=${COOKIE_MAX_AGE}`;
+  } else {
+    document.cookie = `${SESSION_COOKIE}=; path=/; Max-Age=0`;
+  }
+}
+
+function setDemoCookie(): void {
+  if (typeof document === 'undefined') return;
+  document.cookie = `${DEMO_COOKIE}=1; path=/; SameSite=Lax; Max-Age=${COOKIE_MAX_AGE}`;
+}
+
+function clearAuthCookies(): void {
+  if (typeof document === 'undefined') return;
+  document.cookie = `${SESSION_COOKIE}=; path=/; Max-Age=0`;
+  document.cookie = `${DEMO_COOKIE}=; path=/; Max-Age=0`;
+}
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // Helper to map Supabase User to InspectorProfile (pure, stable)
 function mapSupabaseUserToProfile(sbUser: User): InspectorProfile {
   const meta = sbUser.user_metadata || {};
+  const verificationStatus = (meta.verification_status as InspectorProfile['verificationStatus']) || 'approved';
+  const rawRole = (meta.role as string) || '';
+  const platformRole = rawRole === 'inspector' || rawRole === 'admin' ? rawRole : 'inspector';
   return {
     id: sbUser.id,
     email: sbUser.email || '',
     name: meta.full_name || meta.name || 'Compliance Officer',
-    role: meta.role || 'Legal Metrology Inspector',
+    role: rawRole || 'Legal Metrology Inspector',
+    platformRole,
     department: meta.department || 'Dept. of Consumer Affairs',
+    employeeId: meta.employee_id || null,
+    avatarUrl: null,
+    verificationStatus,
+    organization: meta.organization || null,
+    location: meta.location || null,
+    inspectorEmployeeId: meta.inspector_employee_id || null,
     isDemo: false,
   };
 }
@@ -85,14 +148,20 @@ async function loadProfileFromSupabase(sbUser: User): Promise<InspectorProfile> 
   try {
     const { data, error } = await getMyProfile();
     if (!error && data) {
+      const verificationStatus = (data.verification_status as InspectorProfile['verificationStatus']) || 'approved';
       return {
         id: data.id,
         email: data.email || sbUser.email || '',
         name: data.full_name || sbUser.user_metadata?.full_name || 'Compliance Officer',
         role: data.designation || sbUser.user_metadata?.role || 'Legal Metrology Inspector',
+        platformRole: data.role || 'inspector',
         department: data.department || sbUser.user_metadata?.department || 'Dept. of Consumer Affairs',
         employeeId: data.employee_id,
         avatarUrl: data.avatar_url,
+        verificationStatus,
+        organization: data.organization || sbUser.user_metadata?.organization || null,
+        location: data.location || sbUser.user_metadata?.location || null,
+        inspectorEmployeeId: data.inspector_employee_id || null,
         isDemo: false,
       };
     }
@@ -128,6 +197,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           } else if (data?.session?.user && mounted) {
             setSession(data.session);
             setSupabaseUser(data.session.user);
+            setSessionCookie(data.session.access_token);
             const profile = await withTimeout(
               loadProfileFromSupabase(data.session.user),
               AUTH_TIMEOUT_MS,
@@ -170,6 +240,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (currentSession?.user) {
           setSession(currentSession);
           setSupabaseUser(currentSession.user);
+          setSessionCookie(currentSession.access_token);
           const profile = await withTimeout(
             loadProfileFromSupabase(currentSession.user),
             AUTH_TIMEOUT_MS,
@@ -186,6 +257,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setSession(null);
             setSupabaseUser(null);
             setUser(null);
+            setSessionCookie(null);
           }
         }
         setIsLoading(false);
@@ -202,11 +274,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signInWithDemo = useCallback(async () => {
     setIsLoading(true);
     setUser(DEMO_INSPECTOR);
+    setDemoCookie();
     if (typeof window !== 'undefined') {
       localStorage.setItem('packintel_demo_session', JSON.stringify(DEMO_INSPECTOR));
     }
     setIsLoading(false);
-    router.push('/');
+    router.push('/dashboard');
   }, [router]);
 
   const signIn = useCallback(async ({ email, password }: { email: string; password: string }) => {
@@ -235,10 +308,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (data.user) {
           setSession(data.session);
           setSupabaseUser(data.user);
+          setSessionCookie(data.session?.access_token);
           const profile = await loadProfileFromSupabase(data.user);
           setUser(profile);
           setIsLoading(false);
-          router.push('/');
+          const status = profile.verificationStatus || 'approved';
+          if (status === 'pending') {
+            router.push('/verification-pending');
+          } else if (status === 'rejected') {
+            router.push('/verification-rejected');
+          } else {
+            router.push('/dashboard');
+          }
           return { success: true };
         }
       }
@@ -269,7 +350,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [router, signInWithDemo]);
 
-  const signUp = useCallback(async ({ email, password, fullName }: { email: string; password: string; fullName?: string }) => {
+  const signUp = useCallback(async ({ email, password, fullName, department, designation, employeeId, phone, organization, location, inspectorEmployeeId }: SignUpCredentials) => {
     setIsLoading(true);
     try {
       if (isSupabaseConfigured) {
@@ -279,8 +360,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           options: {
             data: {
               full_name: fullName || 'Legal Metrology Inspector',
-              role: 'Legal Metrology Inspector',
-              department: 'Dept. of Consumer Affairs',
+              role: 'inspector',
+              verification_status: 'pending',
+              department: department || 'Dept. of Consumer Affairs',
+              designation: designation || 'Legal Metrology Inspector',
+              employee_id: employeeId || null,
+              phone: phone || null,
+              organization: organization || null,
+              location: location || null,
+              inspector_employee_id: inspectorEmployeeId || null,
             },
           },
         });
@@ -295,11 +383,63 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (data.user) {
           setSupabaseUser(data.user);
+          // New inspectors are always pending until an admin approves them —
+          // never auto-navigate to the dashboard on sign-up.
+          //
+          // Fire-and-forget notifies the admin verification email address. It
+          // is deliberately not awaited: a failed email must never fail the
+          // registration, and admins can re-send from the Settings page.
+          // Safe diagnostic: logs the exact id GoTrue persisted and the public
+          // project reference the browser client talks to, so a cross-project
+          // mismatch (signup lands in project X, notify-admin looks in project
+          // Y) is immediately visible. Never logs passwords, tokens, or keys.
+          const browserProject = (() => {
+            try {
+              const u = (supabase as unknown as { supabaseUrl?: string })?.supabaseUrl || '';
+              return u.replace(/^https:\/\//, '').split('.')[0] || '?';
+            } catch {
+              return '?';
+            }
+          })();
+          console.log('[signup] Auth signup successful:', {
+            userId: data.user?.id,
+            email: data.user?.email,
+            browserProject,
+          });
+          const userId = data.user.id;
+          try {
+            const res = await fetch('/api/signup/notify-admin', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                userId: data.user.id,
+                email: data.user.email,
+              }),
+            });
+            if (!res.ok) {
+  const text = await res.text();
+
+  console.error(
+    `[signup] notify-admin failed: HTTP ${res.status} ${res.statusText} | ${text}`
+  );
+
+  console.error('[signup] notify-admin request userId:', data.user.id);
+}
+          } catch {
+            // The email is best-effort; a pending registration stays out of
+            // the app until an admin approves it.
+          }
           if (data.session) {
             setSession(data.session);
+            setSessionCookie(data.session.access_token);
             const profile = await loadProfileFromSupabase(data.user);
             setUser(profile);
-            router.push('/');
+          } else {
+            // Email confirmation is required — no session yet.  Set a
+            // temporary profile from auth user metadata so downstream pages
+            // (verification-pending) can display the user's email.
+            const tempProfile = mapSupabaseUserToProfile(data.user);
+            setUser(tempProfile);
           }
           return { success: true };
         }
@@ -321,6 +461,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.error('Supabase sign out error:', err);
     } finally {
+      clearAuthCookies();
       if (typeof window !== 'undefined') {
         localStorage.removeItem('packintel_demo_session');
       }
