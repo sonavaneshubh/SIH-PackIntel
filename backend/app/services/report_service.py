@@ -13,6 +13,7 @@ compliance engine; this module only assembles persisted data into a document.
 import json
 import logging
 import re
+import urllib.request
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -39,7 +40,9 @@ try:
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
+    from reportlab.lib.utils import ImageReader
     from reportlab.platypus import (
+        Image,
         Paragraph,
         Preformatted,
         SimpleDocTemplate,
@@ -110,6 +113,31 @@ def _clean_multi(value: Optional[str]) -> str:
         return ""
     text = str(value).strip()
     return text.encode("latin-1", "replace").decode("latin-1")
+
+
+def _xml(value: Any) -> str:
+    """PDF-safe single-line string with XML markup entities escaped."""
+    if value is None:
+        return ""
+    text = str(value).replace("\n", " ").replace("\r", " ").strip()
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .encode("latin-1", "replace")
+        .decode("latin-1")
+    )
+
+
+def _fetch_image_bytes(url: Optional[str], timeout: float = 10.0) -> Optional[bytes]:
+    """Fetch an image (e.g. a signed storage URL) for embedding in a report PDF."""
+    if not url or not url.startswith(("http://", "https://")):
+        return None
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            return resp.read()
+    except Exception:
+        return None
 
 
 class ReportService:
@@ -397,7 +425,7 @@ class ReportService:
 
 
     @classmethod
-    def _build_pdf(
+    def _build_pdf_reportlab(
         cls,
         inspection: Dict[str, Any],
         label: Dict[str, Any],
@@ -440,6 +468,17 @@ class ReportService:
             for r in results
             if (r.get("result") or "").lower() in {"warning", "uncertain"}
         ]
+
+        summary_counts = {
+            "pass": sum(1 for r in results if str(r.get("result") or "").lower() == "pass"),
+            "uncertain": sum(
+                1 for r in results if str(r.get("result") or "").lower() in {"warning", "uncertain"}
+            ),
+            "fail": sum(1 for r in results if str(r.get("result") or "").lower() == "fail"),
+        }
+        summary_counts["not_applicable"] = max(
+            0, len(results) - sum(summary_counts.values())
+        )
 
         styles = getSampleStyleSheet()
         title_style = ParagraphStyle(
@@ -564,6 +603,13 @@ class ReportService:
                 num = float(val)
                 confidence = round(num if num <= 100 else num / 100)
                 break
+        overall_label = (
+            "High"
+            if (confidence or 0) >= 75
+            else "Medium"
+            if (confidence or 0) >= 50
+            else "Low"
+        )
         status_rows = [
             [
                 "<b>Status:</b> " + status,
@@ -589,10 +635,82 @@ class ReportService:
         story.append(status_table)
         story.append(Spacer(1, 3 * mm))
 
-        # Violations
-        story.append(Paragraph("VIOLATIONS", section_style))
+        # Compliance summary (matches the on-screen PASS / REVIEW / FAIL / N-A strip)
+        story.append(Paragraph("SUMMARY", section_style))
+        summary_headers = (
+            "PASS (Compliant)",
+            "UNCERTAIN (Review Required)",
+            "FAIL (Violation)",
+            "NOT APPLICABLE",
+        )
+        summary_vals = (
+            str(summary_counts["pass"]),
+            str(summary_counts["uncertain"]),
+            str(summary_counts["fail"]),
+            str(summary_counts["not_applicable"]),
+        )
+        summary_table = Table(
+            [
+                [Paragraph("<b>" + h + "</b>", small_style) for h in summary_headers],
+                [Paragraph("<b>" + v + "</b>", small_style) for v in summary_vals],
+            ],
+            colWidths=[doc.width / 4.0] * 4,
+        )
+        summary_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
+                    ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+                    ("PADDING", (0, 0), (-1, -1), 5),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        story.append(summary_table)
+        story.append(Spacer(1, 3 * mm))
+
+        # Image & OCR assessment (matches the on-screen confidence card)
+        story.append(Paragraph("IMAGE & OCR ASSESSMENT", section_style))
+        assessment_reason = (
+            "Optical character recognition returned high-confidence text; "
+            "statutory declarations were assessed with strong reliability."
+            if overall_label == "High"
+            else "Some of the scanned text was returned at lower confidence; "
+            "affected declarations may need manual review."
+            if overall_label == "Medium"
+            else "Low OCR confidence was recorded; verify the declarations "
+            "against the physical package label."
+        )
+        assessment_table = Table(
+            [
+                [Paragraph("<b>Overall Assessment</b>", small_style), Paragraph(overall_label, small_style)],
+                [
+                    Paragraph("<b>OCR Confidence</b>", small_style),
+                    Paragraph(f"{confidence}%" if confidence is not None else NOT_DETECTED, small_style),
+                ],
+                [Paragraph("<b>Assessment</b>", small_style), Paragraph(assessment_reason, small_style)],
+            ],
+            colWidths=[doc.width * 0.28, doc.width * 0.72],
+        )
+        assessment_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
+                    ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+                    ("PADDING", (0, 0), (-1, -1), 5),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        story.append(assessment_table)
+        story.append(Spacer(1, 3 * mm))
+
+        story.append(Paragraph("VIOLATIONS & ATTENTION REQUIRED", section_style))
         if violations:
             for v in violations:
+                citation = _xml(v.get("legal_reference"))
                 story.append(
                     Paragraph(
                         "- " + cls._wrap(v.get("rule_name"), 120)
@@ -602,70 +720,183 @@ class ReportService:
                         body_style,
                     )
                 )
+                reason_text = _xml(v.get("explanation") or v.get("reason") or "Could not be verified from the image.")
+                detected_text = _xml(v.get("extracted_value") or v.get("detected_value"))
                 story.append(
                     Paragraph(
                         "<font size=8 color='#6b7280'>Detected: "
-                        + cls._wrap(v.get("extracted_value"), 90)
-                        + " | Rule: "
-                        + cls._wrap(v.get("requirement"), 90)
+                        + (detected_text or "Not detected")
+                        + (" | Requirement: " + _xml(v.get("requirement")) if v.get("requirement") else "")
                         + " | "
-                        + cls._wrap(v.get("explanation") or v.get("evidence"), 90)
+                        + reason_text
+                        + (f"<br/><b>Citation:</b> {citation}" if citation else "")
                         + "</font>",
                         small_style,
                     )
                 )
                 story.append(Spacer(1, 1.5 * mm))
         else:
-            story.append(Paragraph("No violations detected.", body_style))
-
-        # Applicable rules
-        story.append(Paragraph("APPLICABLE RULES", section_style))
-        if results:
-            rule_rows = [
-                [
-                    "<b>" + cls._wrap(r.get("rule_code"), 20) + "</b>",
-                    "<b>" + cls._wrap(r.get("rule_name"), 44) + "</b>",
-                    (r.get("result") or "not_applicable").upper(),
-                    cls._wrap(r.get("extracted_value"), 40),
-                ]
-                for r in results
-            ]
-            rule_table = Table(
-                rule_rows,
-                colWidths=[doc.width * 0.14, doc.width * 0.34, doc.width * 0.14, doc.width * 0.38],
+            story.append(
+                Paragraph(
+                    "No Legal Metrology violations detected in the provided image.", body_style
+                )
             )
-            rule_table.setStyle(
+
+        # Compliance checklist — full Rule & Provision / Requirement / Detected / Status / Reason columns
+        story.append(Paragraph("LEGAL METROLOGY RULES COMPLIANCE EVALUATION", section_style))
+        if results:
+            def _cell(text: str, bold: bool = False) -> Paragraph:
+                inner = ("<b>" + text + "</b>") if bold else text
+                return Paragraph(inner, small_style)
+
+            header_row = [
+                _cell("Rule & Provision", bold=True),
+                _cell("Requirement", bold=True),
+                _cell("Detected Declaration", bold=True),
+                _cell("Status", bold=True),
+                _cell("Reason & Evidence", bold=True),
+            ]
+            checklist_rows = [header_row]
+            for r in results:
+                rule_provision = (
+                    "<b>" + _xml(r.get("rule_code") or r.get("rule_id")) + "</b><br/>"
+                    + _xml(r.get("rule_name"))
+                )
+                requirement = _xml(r.get("requirement") or r.get("ruleDescription") or "")
+                detected = _xml(
+                    r.get("extracted_value") or r.get("detected_value")
+                ) or "<i>Not detected</i>"
+                result_status = (r.get("result") or r.get("status") or "not_applicable").upper()
+                reason = _xml(r.get("explanation") or r.get("reason") or "")
+                evidence = _xml(r.get("evidence"))
+                reason_block = reason or "—"
+                if evidence:
+                    reason_block = (reason_block + "<br/>" if reason_block != "—" else "") + (
+                        "<font color='#1a73e8'>" + evidence + "</font>"
+                    )
+                checklist_rows.append(
+                    [
+                        _cell(rule_provision),
+                        _cell(requirement),
+                        _cell(detected),
+                        _cell(result_status, bold=True),
+                        _cell(reason_block),
+                    ]
+                )
+            checklist_table = Table(
+                checklist_rows,
+                colWidths=[
+                    doc.width * 0.22,
+                    doc.width * 0.24,
+                    doc.width * 0.17,
+                    doc.width * 0.13,
+                    doc.width * 0.24,
+                ],
+                repeatRows=1,
+            )
+            checklist_table.setStyle(
                 TableStyle(
                     [
                         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
                         ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
                         ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
                         ("PADDING", (0, 0), (-1, -1), 4),
-                        ("FONTSIZE", (0, 0), (-1, -1), 7.5),
-                        ("FONTSIZE", (0, 0), (0, 0), 7.5),
+                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
                     ]
                 )
             )
-            story.append(rule_table)
+            story.append(checklist_table)
+            story.append(Spacer(1, 3 * mm))
         else:
-            story.append(Paragraph("No rule evaluations were recorded for this inspection.", body_style))
+            story.append(
+                Paragraph("No rule evaluations were recorded for this inspection.", body_style)
+            )
+
+        # Extracted Legal Metrology declarations (matches the on-screen grid)
+        story.append(Paragraph("EXTRACTED LEGAL METROLOGY DECLARATIONS", section_style))
+        declaration_fields = [
+            ("MRP", _first(pi, "mrp") or label.get("mrp")),
+            ("Net Quantity", _first(pi, "net_quantity") or label.get("net_quantity")),
+            (
+                "Commodity / Product Name",
+                _first(pi, "brand_or_commodity_name", "generic_name", "commodity_name"),
+            ),
+            ("Customer Care / Helpline", _first(pi, "customer_care", "customer_care_details", "helpline")),
+            (
+                "Company Address",
+                _first(pi, "company_address", "packer_address", "manufacturer_address", "address"),
+            ),
+            (
+                "FSSAI / License No.",
+                _first(pi, "fssai_number", "fssai_license", "license_number", "registration_number")
+                or label.get("fssai_license_number"),
+            ),
+            (
+                "Manufacturer Name",
+                _first(pi, "manufacturer_name", "packer_name", "importer_name")
+                or label.get("manufacturer_name"),
+            ),
+            ("Country of Origin", _first(pi, "country_of_origin") or label.get("country_of_origin")),
+            ("Batch / Lot Number", _first(pi, "batch_number")),
+            (
+                "Manufacturing / Packed Date",
+                _first(pi, "manufacturing_date", "packing_date") or label.get("month_year_packed"),
+            ),
+            ("Best Before / Expiry Date", _first(pi, "expiry_date", "best_before_date")),
+            ("Net Weight", _first(pi, "net_weight") or label.get("net_weight")),
+            ("Ingredient List", _first(pi, "ingredient_list", "ingredients", "ingredient")),
+            (
+                "Storage / Handling Instructions",
+                _first(pi, "storage_instructions", "storage", "handling_instructions", "instructions"),
+            ),
+            ("Website / Email / Contact", _first(pi, "website", "email", "contact_email", "contact")),
+            ("Vegetarian / Non-Veg Mark", _first(pi, "veg_nonveg", "veg_nonveg_mark", "vegetarian_mark")),
+        ]
+        decl_rows = [
+            [
+                Paragraph("<b>" + _xml(label_txt) + "</b>", small_style),
+                Paragraph(
+                    _xml(value) if value else "<font color='#9ca3af'>Not detected</font>", small_style
+                ),
+            ]
+            for label_txt, value in declaration_fields
+        ]
+        decl_table = Table(
+            decl_rows,
+            colWidths=[doc.width * 0.34, doc.width * 0.66],
+        )
+        decl_table.setStyle(
+            TableStyle(
+                [
+                    ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+                    ("PADDING", (0, 0), (-1, -1), 4),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        story.append(decl_table)
+        story.append(Spacer(1, 3 * mm))
 
         # Warnings
-        story.append(Paragraph("WARNINGS", section_style))
+        story.append(Paragraph("WARNINGS (REVIEW REQUIRED)", section_style))
         if warnings:
             for w in warnings:
                 story.append(
                     Paragraph(
-                        "- " + cls._wrap(w.get("rule_name"), 120) + "  <font size=7.5 color='#6b7280'>[" + cls._wrap(w.get("rule_code"), 16) + "]</font>",
+                        "- " + cls._wrap(w.get("rule_name"), 120)
+                        + "  <font size=7.5 color='#6b7280'>["
+                        + cls._wrap(w.get("rule_code"), 16)
+                        + "]</font>",
                         body_style,
                     )
                 )
                 story.append(
                     Paragraph(
                         "<font size=8 color='#6b7280'>Detected: "
-                        + cls._wrap(w.get("extracted_value"), 90)
+                        + (_xml(w.get("extracted_value") or w.get("detected_value")) or "Not detected")
                         + " | "
-                        + cls._wrap(w.get("explanation"), 90)
+                        + (_xml(w.get("explanation") or w.get("reason")) or "")
                         + "</font>",
                         small_style,
                     )
@@ -674,32 +905,106 @@ class ReportService:
         else:
             story.append(Paragraph("No warnings returned.", body_style))
 
-        # Scanned images
-        story.append(Paragraph("SCANNED IMAGES", section_style))
+        # Pipeline & image quality diagnostics
+        story.append(Paragraph("PIPELINE & IMAGE QUALITY DIAGNOSTICS", section_style))
         front_url = image_urls.get("label_front") or image_urls.get("product_full")
         back_url = image_urls.get("label_back")
+        ocr_text = label.get("raw_ocr_text") or ""
+        raw_engine = (
+            label.get("extraction_engine")
+            or _first(pi, "extraction_engine")
+            or NOT_DETECTED
+        )
+        diag_rows = [
+            [
+                Paragraph("<b>Image Quality</b>", small_style),
+                Paragraph("Usable" if (front_url or back_url) else "Unavailable", small_style),
+            ],
+            [
+                Paragraph("<b>OCR Status</b>", small_style),
+                Paragraph(
+                    "Readable text extracted" if ocr_text else "No readable text", small_style
+                ),
+            ],
+            [
+                Paragraph("<b>OCR Confidence</b>", small_style),
+                Paragraph(f"{confidence}%" if confidence is not None else NOT_DETECTED, small_style),
+            ],
+            [Paragraph("<b>Extraction Engine</b>", small_style), Paragraph(_xml(raw_engine), small_style)],
+            [
+                Paragraph("<b>Overall Assessment</b>", small_style),
+                Paragraph(overall_label, small_style),
+            ],
+        ]
+        diag_table = Table(
+            diag_rows,
+            colWidths=[doc.width * 0.34, doc.width * 0.66],
+        )
+        diag_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
+                    ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+                    ("PADDING", (0, 0), (-1, -1), 4),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        story.append(diag_table)
+        story.append(Spacer(1, 3 * mm))
+
+        # Scanned label images (embedded copies of the front & back photographs)
+        story.append(Paragraph("SCANNED LABEL IMAGES", section_style))
+        max_img_w = doc.width / 2.0 - 6
+        max_img_h = 90
+
+        def _image_flowable(url: Optional[str], caption: str):
+            img_data = _fetch_image_bytes(url)
+            if img_data:
+                buf = BytesIO(img_data)
+                try:
+                    iw, ih = ImageReader(buf).getSize()
+                    scale = min(max_img_w / max(iw, 1), max_img_h / max(ih, 1), 1.0)
+                    width = max(iw * scale, 1)
+                    height = max(ih * scale, 1)
+                    image = Image(buf, width=width, height=height)
+                except Exception:
+                    return [Paragraph("Image unavailable", small_style), Paragraph("", small_style)]
+            else:
+                image = None
+            return [
+                image,
+                Paragraph(
+                    "<b>" + _xml(caption) + ":</b> "
+                    + (_xml(url) if url else NOT_DETECTED),
+                    small_style,
+                ),
+            ]
+
         story.append(
-            Paragraph(
-                "<b>Front:</b> "
-                + (cls._wrap(front_url, 80) if front_url else NOT_DETECTED)
-                + "<br/><b>Back:</b> "
-                + (cls._wrap(back_url, 80) if back_url else NOT_DETECTED),
-                small_style,
+            Table(
+                [
+                    [
+                        _image_flowable(front_url, "Front")[0] or Paragraph("Image unavailable", small_style),
+                        _image_flowable(back_url, "Back")[0] or Paragraph("Image unavailable", small_style),
+                    ],
+                    [
+                        Paragraph(
+                            "<b>Front:</b> " + (_xml(front_url) if front_url else NOT_DETECTED),
+                            small_style,
+                        ),
+                        Paragraph(
+                            "<b>Back:</b> " + (_xml(back_url) if back_url else NOT_DETECTED),
+                            small_style,
+                        ),
+                    ],
+                ],
+                colWidths=[doc.width / 2.0, doc.width / 2.0],
             )
         )
 
-        # Associated scans
-        story.append(Paragraph("ASSOCIATED SCANS", section_style))
-        for (side, url) in (("Front", front_url), ("Back", back_url)):
-            story.append(
-                Paragraph(
-                    f"{side}: {url if url else NOT_DETECTED}",
-                    small_style,
-                )
-            )
-
         # OCR text
-        ocr_text = label.get("raw_ocr_text") or ""
         story.append(Paragraph("ORIGINAL OCR TEXT", section_style))
         if ocr_text:
             story.append(
@@ -714,9 +1019,16 @@ class ReportService:
         story.append(Spacer(1, 6 * mm))
         story.append(
             Paragraph(
-                "Generated by PackIntel Legal Metrology Compliance System at "
+                "PackIntel · Legal Metrology Rule-Driven Automated Compliance System (SIH034) — "
+                "Report generated "
                 + datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
                 small_style,
+            )
+        )
+        story.append(
+            Paragraph(
+                "Disclaimer: This report is generated automatically from scanned label data.",
+                ParagraphStyle("Disclaimer", parent=small_style, textColor=colors.HexColor("#9ca3af")),
             )
         )
 
@@ -727,7 +1039,7 @@ class ReportService:
     # Public entry point                                                 #
     # ------------------------------------------------------------------ #
 
-    @classmethod
+    @staticmethod
     def _supabase():
         from supabase import create_client
 
@@ -751,6 +1063,11 @@ class ReportService:
         "Not detected"), stores the artifact in the `inspection-reports` bucket
         and returns a working signed download URL.
         """
+        try:
+            uuid.UUID(str(inspection_id))
+        except (ValueError, AttributeError):
+            raise HTTPException(status_code=404, detail="Inspection not found")
+
         client = cls._client()
         if not client:
             raise HTTPException(
@@ -827,7 +1144,7 @@ class ReportService:
 
         # PDF is used for downloadable reports; txt remains the plain-text fallback.
         if (format_type or "pdf").lower() == "pdf":
-            content = cls._build_pdf(inspection, label, results, image_urls)
+            content = cls._build_pdf_reportlab(inspection, label, results, image_urls)
             extension = "pdf"
             report_type = "pdf"
             content_type = "application/pdf"
@@ -907,6 +1224,11 @@ class ReportService:
     @staticmethod
     def load_inspection(inspection_id: str) -> dict:
         """Fetches an inspection with its labels, results and images (service role)."""
+        try:
+            uuid.UUID(str(inspection_id))
+        except (ValueError, AttributeError):
+            raise HTTPException(status_code=404, detail="Inspection not found")
+
         client = ReportService._supabase()
         if not client:
             raise HTTPException(status_code=503, detail="Database not configured")

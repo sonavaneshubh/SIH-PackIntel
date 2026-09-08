@@ -185,7 +185,7 @@ export function ReportView() {
   if (loadState === 'not_found')
     return (
       <AppShell pageTitle="Inspection Report">
-        <NotFoundState onBack={() => router.push('/history')} />
+        <NotFoundState onBack={() => router.push('/reports')} />
       </AppShell>
     );
 
@@ -195,7 +195,7 @@ export function ReportView() {
         <ErrorState
           message={error || 'Inspection not found.'}
           onRetry={() => void loadReport()}
-          onBack={() => router.push('/history')}
+          onBack={() => router.push('/reports')}
         />
       </AppShell>
     );
@@ -205,7 +205,7 @@ export function ReportView() {
       <main className="report-page mx-auto w-full max-w-6xl pb-12">
         {/* Top action bar — Back then Download PDF Report, side-by-side */}
         <div className="mb-5 flex flex-wrap items-center gap-3">
-          <Link href="/history">
+          <Link href="/reports">
             <Button variant="outline" icon="arrow_back">
               Back
             </Button>
@@ -524,7 +524,7 @@ function ErrorState({
           Try Again
         </Button>
         <Button variant="outline" icon="arrow_back" onClick={onBack}>
-          Back to History
+          Back to Reports
         </Button>
       </div>
     </div>
@@ -541,7 +541,7 @@ function NotFoundState({ onBack }: { onBack: () => void }) {
         incorrect.
       </p>
       <Button variant="primary" icon="arrow_back" onClick={onBack}>
-        Back to History
+        Back to Reports
       </Button>
     </div>
   );
