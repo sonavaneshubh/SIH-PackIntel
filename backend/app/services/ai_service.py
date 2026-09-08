@@ -154,7 +154,8 @@ _DATE_VALUE = re.compile(
 )
 _EXPIRY_VALUE = re.compile(
     r"(?:best\s*(?:before|used|by)\s*[:.]?|use\s*by\s*[:.]?|\bexp(?:iry|rs?)\s*[:.]?)"
-    r"\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2}[/-]\d{2,4}|[A-Za-z]{3,9}\s*\d{2,4}|\d{1,2}\s*(?:months?|days?|years?)\s*(?:from\s*(?:mfg|pkd|manufacture|packing))?)",
+    r"\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2}[/-]\d{2,4}|[A-Za-z]{3,9}\s*\d{2,4}|"
+    r"\d{1,2}\s*(?:months?|weeks?|days?|years?)(?:\s+from\s+(?:(?:date\s+of\s+)?(?:mfg|pkd|manufacture|manufacturing|packing|packaging)))?)",
     re.IGNORECASE,
 )
 

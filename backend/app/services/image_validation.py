@@ -44,6 +44,26 @@ class ValidatedImage:
     content_type: Optional[str]
 
 
+def limit_image_dimensions(image: Image.Image) -> Image.Image:
+    """Downscale *image* so its longest side never exceeds MAX_IMAGE_DIMENSION.
+
+    Returns the input unchanged when it already fits; never mutates the input.
+    This single choke point bounds every decoded copy downstream (the base64
+    data URI, OCR/vision re-fetches, PNG re-encodes), which keeps the scan
+    pipeline's memory footprint small regardless of the uploaded resolution.
+    """
+    max_side = max(1, int(getattr(settings, "MAX_IMAGE_DIMENSION", 1600)))
+    width, height = image.size
+    largest = max(width, height)
+    if largest <= max_side:
+        return image
+    scale = max_side / largest
+    return image.resize(
+        (max(1, int(width * scale)), max(1, int(height * scale))),
+        Image.Resampling.LANCZOS,
+    )
+
+
 def validate_upload(
     data: bytes,
     *,
@@ -55,7 +75,8 @@ def validate_upload(
     Raises :class:`ImageValidationError` with a user-safe message when any
     check fails. ``content_type``/``filename`` come from the client and are
     advisory only — Pillow remains the authority for whether the bytes are an
-    image.
+    image. Decoded images are downscaled to ``MAX_IMAGE_DIMENSION`` so the
+    rest of the pipeline never holds a full-resolution pixel buffer.
     """
     max_bytes = max(1, int(getattr(settings, "MAX_IMAGE_SIZE_MB", 10))) * 1024 * 1024
 
@@ -93,6 +114,8 @@ def validate_upload(
             f"Uploaded file is not a supported image format: {exc}. "
             "Use JPEG, PNG, or WebP."
         ) from exc
+
+    image = limit_image_dimensions(image)
 
     return ValidatedImage(
         image=image,

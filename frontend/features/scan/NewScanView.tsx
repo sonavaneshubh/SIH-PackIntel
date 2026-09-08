@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowRight,
@@ -13,6 +13,9 @@ import {
   History,
   ImagePlus,
   Package,
+  RefreshCw,
+  RotateCcw,
+  ScanLine,
   TrendingDown,
   TrendingUp,
 } from 'lucide-react';
@@ -45,9 +48,47 @@ const CAPTURE_FORM = {
   is_imported: false,
 };
 
-interface UploadImage {
+interface UploadValidation {
+  valid: boolean;
+  message: string | null;
+}
+
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const ALLOWED_IMAGE_EXT = /\.(jpe?g|png|webp)$/i;
+const MAX_IMAGE_SIZE_BYTES = 15 * 1024 * 1024;
+
+// A single validated image source used by both the camera and the upload path.
+// The camera produces jpeg blobs; uploads come from a <input type=file>.
+interface ProductSideImage {
+  source: 'camera' | 'upload';
   file: File;
-  url: string;
+  objectUrl: string;
+  side: 'front' | 'back';
+}
+
+function validateUpload(file: File | undefined): UploadValidation {
+  if (!file) return { valid: false, message: null };
+  const typeOk = ALLOWED_IMAGE_TYPES.includes(file.type);
+  const extOk = ALLOWED_IMAGE_EXT.test(file.name);
+  if (!typeOk && !extOk) {
+    return {
+      valid: false,
+      message: 'Please choose a JPG, JPEG, PNG or WEBP image.',
+    };
+  }
+  if (file.size > MAX_IMAGE_SIZE_BYTES) {
+    return {
+      valid: false,
+      message: 'Image is too large. Please choose a smaller image (max 15MB).',
+    };
+  }
+  if (file.size === 0) {
+    return {
+      valid: false,
+      message: 'This file appears to be empty. Please select another image.',
+    };
+  }
+  return { valid: true, message: null };
 }
 
 function getProcessingStepIndex(step: string): number {
@@ -75,17 +116,23 @@ function isAfterBackCapture(state: ScannerState): boolean {
   return ['processing', 'completed'].includes(state);
 }
 
+// Which image source is currently being filled for the active side.
+type ActiveSource = 'none' | 'camera' | 'upload';
+
 export function NewScanView() {
   const router = useRouter();
   const { state, runFullPipeline, resetPipeline } = useScanPipeline();
   const [cameraState, setCameraState] = useState<ScannerState>('initializing');
   const [frontCaptured, setFrontCaptured] = useState(false);
   const [backCaptured, setBackCaptured] = useState(false);
+  const [activeSource, setActiveSource] = useState<ActiveSource>('camera');
+  const [frontImage, setFrontImage] = useState<ProductSideImage | null>(null);
+  const [backImage, setBackImage] = useState<ProductSideImage | null>(null);
   const [showUpload, setShowUpload] = useState(false);
-  const [frontUpload, setFrontUpload] = useState<UploadImage | null>(null);
-  const [backUpload, setBackUpload] = useState<UploadImage | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [showReview, setShowReview] = useState(false);
   const [scannerInstance, setScannerInstance] = useState(0);
+  const [validationError, setValidationError] = useState<string | null>(null);
   const frontInputRef = useRef<HTMLInputElement>(null);
   const backInputRef = useRef<HTMLInputElement>(null);
 
@@ -97,6 +144,7 @@ export function NewScanView() {
       const result = await runFullPipeline(frontFile, CAPTURE_FORM, backFile);
       if (!result.success) {
         setScanError(result.error || 'Scan failed. Please try again.');
+        setShowReview(false);
         resetPipeline();
         // Restore the scanner so the operator can re-scan or upload again
         // instead of being stuck on a frozen "processing" view.
@@ -111,9 +159,28 @@ export function NewScanView() {
   const handleCaptureComplete = useCallback(
     (capture: { front: CaptureSideResult | null; back: CaptureSideResult | null }) => {
       if (!capture.front) return;
-      void processImages(capture.front.file, capture.back?.file);
+      // Create our own preview URLs from the files: CameraScanner revokes the
+      // URLs it produced when it unmounts (which releases the camera), so we
+      // must not borrow those for the review screen.
+      setFrontImage({
+        source: 'camera',
+        file: capture.front.file,
+        objectUrl: URL.createObjectURL(capture.front.file),
+        side: 'front',
+      });
+      if (capture.back) {
+        setBackImage({
+          source: 'camera',
+          file: capture.back.file,
+          objectUrl: URL.createObjectURL(capture.back.file),
+          side: 'back',
+        });
+      }
+      // Both camera sides are ready → go straight to the review screen so the
+      // operator can confirm before the (expensive) scan runs.
+      setShowReview(true);
     },
-    [processImages]
+    []
   );
 
   const handleSideCaptured = useCallback((result: CaptureSideResult) => {
@@ -125,38 +192,160 @@ export function NewScanView() {
     setCameraState(next);
   }, []);
 
-  const acceptFile = (file: File | undefined): UploadImage | null => {
-    if (!file) return null;
-    if (!/^image\/(jpeg|png|webp)$/.test(file.type)) return null;
-    if (file.size > 15 * 1024 * 1024) return null;
-    return { file, url: URL.createObjectURL(file) };
+  // Opening the upload flow pauses the live camera preview (and releases the
+  // MediaStream) so we're not holding the sensor while the user picks files.
+  const openUploadFlow = useCallback(() => {
+    setActiveSource('upload');
+    setShowUpload(true);
+    setShowReview(false);
+    setValidationError(null);
+  }, []);
+
+  const cancelUpload = useCallback(() => {
+    setShowUpload(false);
+    if (frontImage || backImage) {
+      setShowReview(true);
+    } else {
+      setActiveSource('camera');
+    }
+  }, [frontImage, backImage]);
+
+  const acceptFileAsSide = (file: File | undefined, side: 'front' | 'back'): void => {
+    const validation = validateUpload(file);
+    if (!validation.valid) {
+      setValidationError(
+        validation.message === 'This file appears to be empty. Please select another image.'
+          ? 'This image could not be read. Please select another image.'
+          : validation.message || 'This image could not be read. Please select another image.',
+      );
+      return;
+    }
+    setValidationError(null);
+    const selected = file as File;
+    // Probe with a throwaway URL first; if the file isn't a decodable image we
+    // never commit it. The retained preview gets its own fresh object URL so a
+    // revoke on the probe can never blank an accepted image.
+    const probeUrl = URL.createObjectURL(selected);
+    const probe = new Image();
+    probe.onload = () => {
+      URL.revokeObjectURL(probeUrl);
+      const previewUrl = URL.createObjectURL(selected);
+      if (side === 'front') {
+        if (frontImage) URL.revokeObjectURL(frontImage.objectUrl);
+        setFrontImage({ source: 'upload', file: selected, objectUrl: previewUrl, side });
+        setFrontCaptured(true);
+      } else {
+        if (backImage) URL.revokeObjectURL(backImage.objectUrl);
+        setBackImage({ source: 'upload', file: selected, objectUrl: previewUrl, side });
+        setBackCaptured(true);
+      }
+    };
+    probe.onerror = () => {
+      URL.revokeObjectURL(probeUrl);
+      setValidationError('This image could not be read. Please select another image.');
+    };
+    probe.src = probeUrl;
   };
 
   const handleFrontUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const image = acceptFile(event.target.files?.[0]);
-    if (image) {
-      if (frontUpload) URL.revokeObjectURL(frontUpload.url);
-      setFrontUpload(image);
-    }
+    const file = event.target.files?.[0];
+    if (file) acceptFileAsSide(file, 'front');
     event.target.value = '';
   };
 
   const handleBackUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const image = acceptFile(event.target.files?.[0]);
-    if (image) {
-      if (backUpload) URL.revokeObjectURL(backUpload.url);
-      setBackUpload(image);
-    }
+    const file = event.target.files?.[0];
+    if (file) acceptFileAsSide(file, 'back');
     event.target.value = '';
   };
 
-  const startUploadAnalysis = () => {
-    if (!frontUpload) return;
-    void processImages(frontUpload.file, backUpload?.file);
-  };
+  // Both sides must be present before the review screen can be submitted.
+  const hasBothImages = Boolean(frontImage && backImage);
 
-  const frontDone = frontCaptured || isAfterFrontCapture(cameraState);
-  const backDone = backCaptured || isAfterBackCapture(cameraState);
+  // The camera session always starts at the front, so retaking either side
+  // restarts the full front-then-back capture. Both stored images are dropped
+  // so the progress bar and camera prompt stay in sync with reality.
+  const restartCaptureSession = useCallback(() => {
+    if (frontImage) URL.revokeObjectURL(frontImage.objectUrl);
+    if (backImage) URL.revokeObjectURL(backImage.objectUrl);
+    setFrontImage(null);
+    setBackImage(null);
+    setFrontCaptured(false);
+    setBackCaptured(false);
+    setShowReview(false);
+    setShowUpload(false);
+    setActiveSource('camera');
+    setScannerInstance((instance) => instance + 1);
+  }, [frontImage, backImage]);
+
+  const retakeFront = restartCaptureSession;
+
+  const retakeBack = restartCaptureSession;
+
+  const replaceFront = useCallback(() => {
+    setShowReview(false);
+    setActiveSource('upload');
+    setShowUpload(true);
+  }, []);
+
+  const replaceBack = useCallback(() => {
+    setShowReview(false);
+    setActiveSource('upload');
+    setShowUpload(true);
+  }, []);
+
+  const removeFront = useCallback(() => {
+    if (frontImage) URL.revokeObjectURL(frontImage.objectUrl);
+    setFrontImage(null);
+    setFrontCaptured(false);
+  }, [frontImage]);
+
+  const removeBack = useCallback(() => {
+    if (backImage) URL.revokeObjectURL(backImage.objectUrl);
+    setBackImage(null);
+    setBackCaptured(false);
+  }, [backImage]);
+
+  const startScanFromReview = useCallback(() => {
+    if (!frontImage) return;
+    if (pipelineActive) return;
+    setShowReview(false);
+    void processImages(frontImage.file, backImage?.file);
+  }, [frontImage, backImage, pipelineActive, processImages]);
+
+  // Upload → Review: keep both selected images, switch from the upload panel
+  // to the review screen so nothing is scanned without an explicit confirm.
+  const continueFromUpload = useCallback(() => {
+    setShowUpload(false);
+    setShowReview(true);
+  }, []);
+
+  const frontDone = frontCaptured || isAfterFrontCapture(cameraState) || Boolean(frontImage);
+  const backDone = backCaptured || isAfterBackCapture(cameraState) || Boolean(backImage);
+
+  // Deterministic: camera shown only when the active source is camera AND the
+  // review screen is not visible AND no scan is running.
+  const showCamera =
+    activeSource === 'camera' && !showReview && !pipelineActive && state.step === 'idle';
+
+  const processingLabel = useMemo(() => {
+    switch (state.step) {
+      case 'creating':
+        return 'Creating inspection record...';
+      case 'uploading':
+        return 'Uploading images...';
+      case 'ocr':
+        return 'Reading product label...';
+      case 'extracting':
+        return 'Extracting product information...';
+      case 'compliance':
+        return 'Checking legal compliance...';
+      case 'completed':
+        return 'Generating report...';
+      default:
+        return 'Processing...';
+    }
+  }, [state.step]);
 
   return (
     <AppShell pageTitle="New Compliance Scan">
@@ -205,28 +394,57 @@ export function NewScanView() {
                 reportActive={state.step === 'completed'}
               />
 
-              <CameraScanner
-                key={scannerInstance}
-                onCaptureComplete={handleCaptureComplete}
-                onSideCaptured={handleSideCaptured}
-                onCameraStateChange={handleCameraStateChange}
-              />
+              {showCamera && (
+                <CameraScanner
+                  key={scannerInstance}
+                  onCaptureComplete={handleCaptureComplete}
+                  onSideCaptured={handleSideCaptured}
+                  onCameraStateChange={handleCameraStateChange}
+                  onUploadRequest={openUploadFlow}
+                />
+              )}
+
+              {showUpload && !pipelineActive && (
+                <UploadPanel
+                  frontImage={frontImage}
+                  backImage={backImage}
+                  disabled={pipelineActive}
+                  error={validationError}
+                  onFrontChoose={() => frontInputRef.current?.click()}
+                  onBackChoose={() => backInputRef.current?.click()}
+                  onContinue={continueFromUpload}
+                  onCancel={cancelUpload}
+                />
+              )}
+
+              {showReview && !pipelineActive && (
+                <ReviewPanel
+                  front={frontImage}
+                  back={backImage}
+                  canScan={hasBothImages}
+                  error={validationError}
+                  onReplaceFront={replaceFront}
+                  onReplaceBack={replaceBack}
+                  onRetakeFront={retakeFront}
+                  onRetakeBack={retakeBack}
+                  onRemoveFront={removeFront}
+                  onRemoveBack={removeBack}
+                  onScan={startScanFromReview}
+                />
+              )}
+
+              {pipelineActive && (
+                <div className="mt-4 flex items-center gap-2 rounded-lg border border-[#e2e8f0] bg-[#f8fafc] px-4 py-3 text-xs font-semibold text-[#1e293b]">
+                  <span className="size-3 shrink-0 animate-spin rounded-full border-2 border-[#00bfa5]/30 border-t-[#00bfa5]" />
+                  {processingLabel}
+                </div>
+              )}
 
               <div className="mt-4 flex flex-col gap-3">
-                {showUpload ? (
-                  <UploadPanel
-                    frontUpload={frontUpload}
-                    backUpload={backUpload}
-                    disabled={pipelineActive}
-                    onFrontChoose={() => frontInputRef.current?.click()}
-                    onBackChoose={() => backInputRef.current?.click()}
-                    onContinue={startUploadAnalysis}
-                    onCancel={() => setShowUpload(false)}
-                  />
-                ) : (
+                {!showUpload && !showReview && (
                   <button
                     type="button"
-                    onClick={() => setShowUpload(true)}
+                    onClick={openUploadFlow}
                     disabled={pipelineActive}
                     className="mx-auto flex items-center gap-1.5 rounded-md py-1 text-xs font-semibold text-[#64748b] transition-colors hover:text-[#00bfa5] disabled:opacity-50"
                   >
@@ -260,9 +478,41 @@ export function NewScanView() {
             )}
 
             {scanError && (
-              <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                {scanError}
-              </p>
+              <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+                <p className="text-sm font-semibold text-red-800">Scan could not be completed</p>
+                <p className="mt-1 text-sm text-red-700">{scanError}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {frontImage && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => {
+                        setScanError(null);
+                        setShowReview(true);
+                      }}
+                      aria-label="Retry scan with the same images"
+                    >
+                      <RotateCcw size={14} aria-hidden="true" />
+                      Retry Scan
+                    </Button>
+                  )}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      setScanError(null);
+                      setShowUpload(false);
+                      setShowReview(false);
+                      setActiveSource('camera');
+                      setScannerInstance((instance) => instance + 1);
+                    }}
+                    aria-label="Start a new scan"
+                  >
+                    <RefreshCw size={14} aria-hidden="true" />
+                    Start New Scan
+                  </Button>
+                </div>
+              </div>
             )}
           </div>
 
@@ -437,22 +687,25 @@ function ProcessingPanel({
 }
 
 function UploadPanel({
-  frontUpload,
-  backUpload,
+  frontImage,
+  backImage,
   disabled,
+  error,
   onFrontChoose,
   onBackChoose,
   onContinue,
   onCancel,
 }: {
-  frontUpload: UploadImage | null;
-  backUpload: UploadImage | null;
+  frontImage: ProductSideImage | null;
+  backImage: ProductSideImage | null;
   disabled: boolean;
+  error: string | null;
   onFrontChoose: () => void;
   onBackChoose: () => void;
   onContinue: () => void;
   onCancel: () => void;
 }) {
+  const canContinue = Boolean(frontImage && backImage);
   return (
     <div className="scanner-fade-in-up rounded-xl border border-[#e2e8f0] bg-[#f8fafc] p-5">
       <div className="flex items-center justify-between">
@@ -462,29 +715,44 @@ function UploadPanel({
           onClick={onCancel}
           disabled={disabled}
           className="text-[11px] font-semibold text-[#64748b] transition-colors hover:text-[#00bfa5] disabled:opacity-50"
+          aria-label="Back to the camera scanner"
         >
-          Back to live scanner
+          Back to scanner
         </button>
       </div>
       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <UploadSlot
-          label="Front Side"
-          image={frontUpload}
+          label="Front"
+          image={frontImage}
           onChoose={onFrontChoose}
           disabled={disabled}
         />
         <UploadSlot
-          label="Back Side"
-          image={backUpload}
+          label="Back"
+          image={backImage}
           onChoose={onBackChoose}
           disabled={disabled}
         />
       </div>
-      <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <p className="text-[11px] text-[#64748b]">JPG, PNG, WEBP · max 15MB per image.</p>
-        <Button variant="primary" size="sm" onClick={onContinue} disabled={!frontUpload || disabled}>
+      {error && (
+        <p role="alert" className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          {error}
+        </p>
+      )}
+      <div className="mt-4 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+        <p className="text-[11px] text-[#64748b]">
+          JPG, JPEG, PNG, WEBP · max 15MB per image.
+          {!canContinue && ' Please add both front and back images.'}
+        </p>
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={onContinue}
+          disabled={!canContinue || disabled}
+          aria-label="Continue to review the selected images"
+        >
           <CloudUpload size={14} aria-hidden="true" />
-          {disabled ? 'Analyzing...' : 'Continue Analysis'}
+          {disabled ? 'Analyzing...' : 'Review & Scan'}
         </Button>
       </div>
     </div>
@@ -498,7 +766,7 @@ function UploadSlot({
   disabled,
 }: {
   label: string;
-  image: UploadImage | null;
+  image: ProductSideImage | null;
   onChoose: () => void;
   disabled: boolean;
 }) {
@@ -507,6 +775,7 @@ function UploadSlot({
       type="button"
       onClick={onChoose}
       disabled={disabled}
+      aria-label={image ? `Replace the ${label} image` : `Choose the ${label} image`}
       className={`flex flex-col items-center justify-center rounded-lg border border-dashed p-4 text-center transition-colors disabled:opacity-50 ${
         image ? 'border-[#00bfa5]/60 bg-[#e0f7f4]/40' : 'border-[#cbd5e1] bg-white hover:border-[#00bfa5]'
       }`}
@@ -515,8 +784,8 @@ function UploadSlot({
         <>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={image.url}
-            alt={`${label} selected image`}
+            src={image.objectUrl}
+            alt={`${label} image selected for scanning`}
             className="h-20 w-full rounded-md border border-[#e2e8f0] object-contain"
           />
           <span className="mt-2 flex items-center gap-1 text-[11px] font-bold text-[#00bfa5]">
@@ -530,11 +799,149 @@ function UploadSlot({
           <span className="flex size-10 items-center justify-center rounded-full bg-[#f1f5f9] text-[#94a3b8]">
             <ImagePlus size={18} aria-hidden="true" />
           </span>
-          <span className="mt-2 text-xs font-bold text-[#1e293b]">{label}</span>
+          <span className="mt-2 text-xs font-bold text-[#1e293b]">{label} side</span>
           <span className="mt-0.5 text-[10px] text-[#94a3b8]">Choose image</span>
         </>
       )}
     </button>
+  );
+}
+
+function ReviewPanel({
+  front,
+  back,
+  canScan,
+  error,
+  onReplaceFront,
+  onReplaceBack,
+  onRetakeFront,
+  onRetakeBack,
+  onRemoveFront,
+  onRemoveBack,
+  onScan,
+}: {
+  front: ProductSideImage | null;
+  back: ProductSideImage | null;
+  canScan: boolean;
+  error: string | null;
+  onReplaceFront: () => void;
+  onReplaceBack: () => void;
+  onRetakeFront: () => void;
+  onRetakeBack: () => void;
+  onRemoveFront: () => void;
+  onRemoveBack: () => void;
+  onScan: () => void;
+}) {
+  return (
+    <section className="scanner-fade-in-up rounded-xl border border-[#e2e8f0] bg-white p-5 shadow-[0_4px_6px_rgba(0,0,0,0.02)]">
+      <div className="flex items-center justify-between">
+        <h3 className="text-[13px] font-bold text-[#1e293b]">Review Product Images</h3>
+        <span className="text-[11px] font-semibold text-[#00bfa5]">Ready to scan</span>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <ReviewSlot
+          sideLabel="FRONT"
+          image={front}
+          onReplace={onReplaceFront}
+          onRetake={onRetakeFront}
+          onRemove={onRemoveFront}
+        />
+        <ReviewSlot
+          sideLabel="BACK"
+          image={back}
+          onReplace={onReplaceBack}
+          onRetake={onRetakeBack}
+          onRemove={onRemoveBack}
+        />
+      </div>
+
+      {error && (
+        <p role="alert" className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          {error}
+        </p>
+      )}
+
+      {!canScan && (
+        <p className="mt-3 rounded-md border border-[#e2e8f0] bg-[#f8fafc] px-3 py-2 text-xs font-medium text-[#64748b]">
+          Please add both front and back images before scanning.
+        </p>
+      )}
+
+      <div className="mt-4 flex flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-center">
+        <p className="text-[11px] text-[#64748b] sm:max-w-[240px]">
+          Confirm the labels look correct before running the compliance scan.
+        </p>
+        <Button
+          variant="primary"
+          size="lg"
+          onClick={onScan}
+          disabled={!canScan}
+          className="w-full sm:w-auto"
+          aria-label="Scan the product with the front and back images"
+        >
+          <ScanLine size={16} aria-hidden="true" />
+          Scan Product
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function ReviewSlot({
+  sideLabel,
+  image,
+  onReplace,
+  onRetake,
+  onRemove,
+}: {
+  sideLabel: string;
+  image: ProductSideImage | null;
+  onReplace: () => void;
+  onRetake: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="rounded-lg border border-[#e2e8f0] bg-[#f8fafc] p-3">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-bold uppercase tracking-wide text-[#1e293b]">{sideLabel} Product Image</span>
+        {image && (
+          <button
+            type="button"
+            onClick={onRemove}
+            className="text-[10px] font-semibold text-red-600 transition-colors hover:text-red-700"
+            aria-label={`Remove ${sideLabel.toLowerCase()} image`}
+          >
+            Remove
+          </button>
+        )}
+      </div>
+      <div className="mt-2 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-md border border-[#e2e8f0] bg-white">
+        {image ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={image.objectUrl}
+            alt={`${sideLabel.toLowerCase()} label for review`}
+            className="size-full object-contain"
+          />
+        ) : (
+          <span className="flex flex-col items-center gap-1 text-[11px] text-[#94a3b8]">
+            <ImagePlus size={18} aria-hidden="true" />
+            Not captured yet
+          </span>
+        )}
+      </div>
+      <div className="mt-2 flex gap-2">
+        <Button variant="outline" size="sm" onClick={onReplace} className="flex-1" aria-label={`Replace ${sideLabel.toLowerCase()} image`}>
+          <RefreshCw size={12} aria-hidden="true" />
+          Replace
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onRetake} className="flex-1" aria-label={`Retake ${sideLabel.toLowerCase()} image with the camera`}>
+          <RotateCcw size={12} aria-hidden="true" />
+          Retake
+        </Button>
+      </div>
+    </div>
   );
 }
 

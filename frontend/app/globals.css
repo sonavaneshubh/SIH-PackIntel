@@ -247,6 +247,32 @@
     margin: 14mm;
   }
 
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Break out of AppShell's h-screen + overflow scroll containers so the
+     whole report prints across multiple pages instead of one viewport. */
+  .h-screen {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  .overflow-hidden,
+  .overflow-y-auto,
+  .overflow-x-auto {
+    overflow: visible !important;
+  }
+
+  .max-h-96,
+  .max-h-48,
+  .max-h-72 {
+    max-height: none !important;
+  }
+
   body {
     background: white;
   }
@@ -264,10 +290,38 @@
     padding-bottom: 0 !important;
   }
 
-  .report-page section,
-  .report-page table,
-  .report-page img {
+  .report-page section {
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  /* Always print the desktop compliance table, never the mobile card list */
+  .report-page .hidden {
+    display: block !important;
+  }
+
+  .report-page .lg\:hidden {
+    display: none !important;
+  }
+
+  .report-page .report-header,
+  .report-page .report-actions,
+  .report-page .grid > div,
+  .report-page figure {
     break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .report-page table {
+    break-inside: auto;
+    page-break-inside: auto;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .report-page tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .report-page h1 {

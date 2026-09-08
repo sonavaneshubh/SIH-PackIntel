@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { supabase } from '@/lib/supabase/client';
 import { getSignedImageUrl, normalizeExtractedLabel } from '@/lib/supabase/inspectionService';
+import { api, API_BASE_URL } from '@/lib/api';
 import {
   Inspection,
   ExtractedLabel,
@@ -24,6 +25,7 @@ import {
   ComplianceResultWithRule,
 } from './reportUtils';
 import { ProductFieldValue, QualityItem, ResultPill, SectionHeading, SummaryItem } from './reportComponents';
+import { buildReportTitle, reportBrandName, reportCompanyName, reportProductId } from '@/lib/reporting';
 import { cn } from '@/lib/utils';
 
 type LoadState = 'loading' | 'not_found' | 'error' | 'ready';
@@ -120,21 +122,53 @@ export function ReportView() {
   const issues = enrichedResults.filter(
     (result) => result.status === 'FAIL' || result.status === 'UNCERTAIN'
   );
+  const productInformation = parseProductInformation(label?.product_information);
+  const reportTitle = useMemo(
+    () => (inspection ? buildReportTitle(inspection, label, productInformation) : ''),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [inspection, label, productInformation]
+  );
+  const productBrand = reportBrandName(inspection, label, productInformation);
+  const productCompany = reportCompanyName(inspection, label, productInformation);
+  const pipelineMeta = parsePipelineMeta(label?.other_declarations);
   const frontOcr = image?.ocr_text || '';
   const rawOcr = backImage?.ocr_text
     ? `${frontOcr}\n\n────────────────────\nBACK SIDE OCR\n────────────────────\n${backImage.ocr_text}`.trim()
     : frontOcr || label?.raw_ocr_text || '';
-  const productInformation = parseProductInformation(label?.product_information);
-  const pipelineMeta = parsePipelineMeta(label?.other_declarations);
   const populatedFields = useMemo(
     () => buildPopulatedFields(inspection, label, productInformation),
     [inspection, label, productInformation]
   );
 
-  const otherInfo = productInformation?.other_detected_information || {};
-
-  const handlePdf = () => {
-    setReportMessage('Preparing PDF of the current report...');
+  const handlePdf = async () => {
+    setReportMessage('Preparing your PDF report...');
+    // On touch/mobile devices the print dialog may be missing or unavailable,
+    // so download a real PDF file from the backend instead. Desktop keeps the
+    // print → "Save as PDF" flow.
+    const isMobile =
+      typeof navigator !== 'undefined' &&
+      (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+        (navigator.maxTouchPoints > 0 && window.innerWidth < 768));
+    if (isMobile && inspectionId) {
+      try {
+        const { download_url } = await api.generateReport({ inspection_id: inspectionId });
+        const url = download_url.startsWith('http')
+          ? download_url
+          : `${API_BASE_URL}${download_url}`;
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.rel = 'noopener noreferrer';
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        setReportMessage(
+          'Your PDF report download has started. If it did not start, open this page in Chrome for Android or Safari and use Share → Save to Files.'
+        );
+        return;
+      } catch {
+        setReportMessage('Downloading the PDF failed. Using the browser’s print dialog instead.');
+      }
+    }
     window.setTimeout(() => {
       window.print();
       setReportMessage('Choose “Save as PDF” as the printer in the dialog to download this report as a PDF.');
@@ -167,47 +201,65 @@ export function ReportView() {
     );
 
   return (
-    <AppShell pageTitle="Legal Metrology Inspection Report">
+    <AppShell pageTitle={reportTitle || 'Legal Metrology Inspection Report'}>
       <main className="report-page mx-auto w-full max-w-6xl pb-12">
-        {/* Report header */}
-        <header className="report-header mb-6 flex flex-col gap-5 border-b border-outline-variant pb-6 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="mb-1.5 text-label-bold font-label-bold uppercase tracking-[0.18em] text-primary">
-              PackIntel · SIH034
-            </p>
-            <h1 className="text-3xl font-bold text-on-surface md:text-4xl">Legal Metrology Compliance Report</h1>
-            <p className="mt-1.5 text-sm text-on-surface-variant">
-              Rule-Driven Legal Metrology (Packaged Commodities) Rules, 2011 Compliance Analysis
-            </p>
-            <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-xs text-on-surface-variant">
-              <span>
-                Report ID: <strong className="text-on-surface">{inspection.inspection_number || inspection.id}</strong>
-              </span>
-              <span>
-                Inspected: <strong className="text-on-surface">{formatDate(inspection.inspected_at || inspection.created_at)}</strong>
-              </span>
-              <span className="text-primary font-medium">Source of Truth: Rules Database</span>
+        {/* Top action bar — Back then Download PDF Report, side-by-side */}
+        <div className="mb-5 flex flex-wrap items-center gap-3">
+          <Link href="/history">
+            <Button variant="outline" icon="arrow_back">
+              Back
+            </Button>
+          </Link>
+          <Button variant="secondary" icon="download" onClick={handlePdf}>
+            Download PDF Report
+          </Button>
+        </div>
+
+        {/* Report header — left: product info, right: scanned images */}
+        <section className="report-header mb-6 rounded-2xl border border-outline-variant bg-surface p-5 lg:p-6">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+            {/* Left: label, title, brand/manufacturer, metadata */}
+            <div className="min-w-0 flex-1">
+              <p className="mb-1.5 text-label-bold font-label-bold uppercase tracking-[0.18em] text-primary">
+                PackIntel · SIH034
+              </p>
+              <h1 className="text-2xl font-bold leading-snug text-on-surface md:text-3xl">
+                {reportTitle}
+              </h1>
+              {(productBrand || productCompany) && (
+                <p className="mt-1.5 text-sm font-medium text-on-surface-variant">
+                  {[productBrand, productCompany].filter(Boolean).join(' | ')}
+                </p>
+              )}
+              <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-on-surface-variant">
+                <span>
+                  Product ID: <strong className="text-on-surface">{reportProductId(inspection)}</strong>
+                </span>
+                <span>
+                  Inspection ID: <strong className="text-on-surface">{inspection.inspection_number || inspection.id}</strong>
+                </span>
+                <span>
+                  Inspected On: <strong className="text-on-surface">{formatDate(inspection.inspected_at || inspection.created_at)}</strong>
+                </span>
+                <span className="text-primary font-medium">Source of Truth: Rules Database</span>
+              </div>
+            </div>
+
+            {/* Right: front & back scanned images (equal sizing, never stretched) */}
+            <div className="flex gap-3 sm:gap-4">
+              <ScanImageBox
+                url={imageUrl}
+                caption="Front"
+                alt="Front side of scanned package label"
+              />
+              <ScanImageBox
+                url={backImageUrl}
+                caption="Back"
+                alt="Back side of scanned package label"
+              />
             </div>
           </div>
-          <div className="report-actions flex flex-wrap gap-2">
-            <Link href="/history">
-              <Button variant="outline" icon="arrow_back">
-                Back to History
-              </Button>
-            </Link>
-            <Button variant="secondary" icon="download" onClick={handlePdf}>
-              Download PDF Report
-            </Button>
-            <Button variant="outline" icon="print" onClick={() => window.print()}>
-              Print Report
-            </Button>
-            <Link href="/scan/new">
-              <Button variant="primary" icon="add">
-                New Scan
-              </Button>
-            </Link>
-          </div>
-        </header>
+        </section>
 
         {reportMessage && (
           <p role="status" className="report-actions mb-4 text-xs text-primary">
@@ -394,150 +446,36 @@ export function ReportView() {
               )}
             </Card>
 
-            {/* Other Detected Information (Distinct non-LM card) */}
-            <Card className="p-5 border-dashed border-outline-variant bg-surface-container-low/40">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-bold text-on-surface">Other Detected Information</h3>
-                <span className="text-[10px] bg-surface-container-high text-on-surface-variant px-2 py-0.5 rounded font-mono">
-                  Not evaluated under Legal Metrology compliance
-                </span>
+            {/* Pipeline & Image Quality Diagnostics */}
+            <Card className="p-5">
+              <SectionHeading title="Pipeline & Image Quality Diagnostics" subtitle="Independent from statutory compliance scores." />
+              <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                <QualityItem label="Image Quality" value={image ? 'Usable' : 'Unavailable'} />
+                <QualityItem label="OCR Status" value={rawOcr ? 'Readable text extracted' : 'No readable text'} />
+                <QualityItem
+                  label="OCR Confidence"
+                  value={
+                    image?.ocr_confidence ?? label?.extraction_confidence
+                      ? `${Math.round(image?.ocr_confidence ?? label?.extraction_confidence ?? 0)}%`
+                      : 'Not available'
+                  }
+                />
+                <QualityItem label="Extraction Engine" value={formatExtractionSource(pipelineMeta)} />
+                {pipelineMeta.vision_used && (
+                  <QualityItem label="Vision Verification" value="Multi-modal verified" />
+                )}
+                <QualityItem label="Overall Assessment" value={confidence.label} />
               </div>
-              <p className="text-xs text-on-surface-variant mb-3">
-                Detected package text (nutrition facts, brand, FSSAI, veg symbols) separated from Legal Metrology compliance scoring.
-              </p>
-              
-              <div className="space-y-2 text-xs">
-                {otherInfo.nutrition_info && Object.keys(otherInfo.nutrition_info).length > 0 && (
-                  <div className="bg-surface-container p-2 rounded">
-                    <span className="font-semibold text-on-surface">Nutrition Table Detected:</span>
-                    <div className="grid grid-cols-2 gap-1 mt-1 font-mono text-[11px] text-on-surface-variant">
-                      {Object.entries(otherInfo.nutrition_info).map(([k, v]) => (
-                        <span key={k}>{k}: {String(v)}</span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {otherInfo.brand_name && (
-                  <p><strong className="text-on-surface">Brand:</strong> {otherInfo.brand_name}</p>
-                )}
-                {otherInfo.batch_number && (
-                  <p><strong className="text-on-surface">Batch / Lot No:</strong> {otherInfo.batch_number}</p>
-                )}
-                {otherInfo.fssai_number && (
-                  <p><strong className="text-on-surface">FSSAI Licence:</strong> {otherInfo.fssai_number}</p>
-                )}
-                {otherInfo.vegetarian_mark && (
-                  <p><strong className="text-on-surface">Vegetarian Mark:</strong> {otherInfo.vegetarian_mark}</p>
-                )}
-              </div>
+              <details className="mt-5 border-t border-outline-variant pt-4">
+                <summary className="cursor-pointer text-sm font-semibold text-on-surface">
+                  View Raw OCR Text
+                </summary>
+                <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap rounded-lg bg-surface-container-lowest p-3 text-xs text-on-surface-variant font-mono">
+                  {rawOcr || 'No readable OCR text was detected.'}
+                </pre>
+              </details>
             </Card>
           </div>
-        </section>
-
-        {/* Source Image + Quality Diagnostics */}
-        <section className="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-[0.8fr_1.2fr]">
-          <Card className="p-5">
-            <SectionHeading title="Source Images" subtitle="Scanned package label artwork (front & back)." />
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <figure>
-                {imageUrl ? (
-                  <>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={imageUrl}
-                      alt="Front side of scanned package label"
-                      className="max-h-72 w-full rounded-lg border border-outline-variant bg-surface-container-low object-contain"
-                    />
-                    <figcaption className="mt-1 text-center text-[11px] font-semibold text-on-surface-variant">
-                      Front
-                    </figcaption>
-                  </>
-                ) : (
-                  <>
-                    <div className="grid h-40 place-items-center rounded-lg border border-dashed border-outline-variant bg-surface-container-low text-sm text-on-surface-variant">
-                      Front image unavailable
-                    </div>
-                    <figcaption className="mt-1 text-center text-[11px] font-semibold text-on-surface-variant">
-                      Front
-                    </figcaption>
-                  </>
-                )}
-              </figure>
-              <figure>
-                {backImageUrl ? (
-                  <>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={backImageUrl}
-                      alt="Back side of scanned package label"
-                      className="max-h-72 w-full rounded-lg border border-outline-variant bg-surface-container-low object-contain"
-                    />
-                    <figcaption className="mt-1 text-center text-[11px] font-semibold text-on-surface-variant">
-                      Back
-                    </figcaption>
-                  </>
-                ) : (
-                  <>
-                    <div className="grid h-40 place-items-center rounded-lg border border-dashed border-outline-variant bg-surface-container-low text-center text-sm text-on-surface-variant">
-                      Back data not available
-                    </div>
-                    <figcaption className="mt-1 text-center text-[11px] font-semibold text-on-surface-variant">
-                      Back
-                    </figcaption>
-                  </>
-                )}
-              </figure>
-            </div>
-          </Card>
-
-          <Card className="p-5">
-            <SectionHeading title="Pipeline & Image Quality Diagnostics" subtitle="Independent from statutory compliance scores." />
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <QualityItem label="Front Image Quality" value={image ? 'Usable' : 'Unavailable'} />
-              <QualityItem label="OCR Status" value={rawOcr ? 'Readable text extracted' : 'No readable text'} />
-              <QualityItem
-                label="OCR Confidence"
-                value={
-                  image?.ocr_confidence != null || label?.extraction_confidence != null
-                    ? `${Math.round(image?.ocr_confidence ?? label?.extraction_confidence ?? 0)}%`
-                    : 'Not available'
-                }
-              />
-              <QualityItem label="Extraction Engine" value={formatExtractionSource(pipelineMeta)} />
-              {pipelineMeta.vision_used && (
-                <QualityItem label="Vision Verification" value="Multi-modal verified" />
-              )}
-              <QualityItem label="Overall Assessment" value={confidence.label} />
-            </div>
-
-            <div className="mt-5 grid grid-cols-1 gap-4 border-t border-outline-variant pt-4 sm:grid-cols-2">
-              <div>
-                <p className="text-xs font-semibold text-on-surface">Front OCR</p>
-                <pre className="mt-2 max-h-44 overflow-auto whitespace-pre-wrap rounded-lg bg-surface-container-lowest p-3 text-xs text-on-surface-variant font-mono">
-                  {frontOcr || label?.raw_ocr_text
-                    ? (frontOcr || label?.raw_ocr_text || '').trim()
-                    : 'No front OCR text was detected.'}
-                </pre>
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-on-surface">Back OCR</p>
-                <pre className="mt-2 max-h-44 overflow-auto whitespace-pre-wrap rounded-lg bg-surface-container-lowest p-3 text-xs text-on-surface-variant font-mono">
-                  {backImage?.ocr_text
-                    ? backImage.ocr_text.trim()
-                    : 'No back OCR data available for this scan.'}
-                </pre>
-              </div>
-            </div>
-
-            <details className="mt-5 border-t border-outline-variant pt-4">
-              <summary className="cursor-pointer text-sm font-semibold text-on-surface">
-                View Raw OCR Text
-              </summary>
-              <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap rounded-lg bg-surface-container-lowest p-3 text-xs text-on-surface-variant font-mono">
-                {rawOcr || 'No readable OCR text was detected.'}
-              </pre>
-            </details>
-          </Card>
         </section>
 
         <footer className="report-footer mt-8 border-t border-outline-variant pt-5 text-xs text-on-surface-variant">
@@ -606,5 +544,34 @@ function NotFoundState({ onBack }: { onBack: () => void }) {
         Back to History
       </Button>
     </div>
+  );
+}
+
+/** Equal-sized, responsive thumbnail box for a scanned package label side. */
+function ScanImageBox({
+  url,
+  caption,
+  alt,
+}: {
+  url: string | null;
+  caption: 'Front' | 'Back';
+  alt: string;
+}) {
+  return (
+    <figure className="group flex w-[150px] flex-col sm:w-[220px]">
+      {url ? (
+        <div className="h-[110px] w-full overflow-hidden rounded-xl border border-outline-variant bg-white shadow-sm transition-all duration-200 group-hover:-translate-y-0.5 group-hover:shadow-md sm:h-[150px]">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={url} alt={alt} className="h-full w-full object-contain p-1.5" />
+        </div>
+      ) : (
+        <div className="grid h-[110px] w-full place-items-center rounded-xl border border-dashed border-outline-variant bg-surface-container-low p-2 text-center text-[11px] leading-tight text-on-surface-variant sm:h-[150px]">
+          {caption} image unavailable
+        </div>
+      )}
+      <figcaption className="mt-1.5 inline-block self-center rounded-full bg-surface-container-high px-2.5 py-0.5 text-center text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+        {caption}
+      </figcaption>
+    </figure>
   );
 }

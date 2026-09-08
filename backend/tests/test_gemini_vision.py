@@ -55,9 +55,9 @@ def make_fields(**values):
 
 
 def stub_gemini(monkeypatch, *, success=True, error=None, **values) -> None:
-    """Replace GeminiVisionService.extract with a canned result (no network)."""
+    """Replace GeminiVisionService.extract_from_text with a canned result (no network)."""
 
-    def fake_extract(image_ref, pil_image=None):
+    def fake_extract(combined_text, front_text=None, back_text=None):
         return GeminiVisionResult(
             success=success,
             product_fields=make_fields(**values) if success else {},
@@ -69,7 +69,7 @@ def stub_gemini(monkeypatch, *, success=True, error=None, **values) -> None:
             error=error,
         )
 
-    monkeypatch.setattr(GeminiVisionService, "extract", staticmethod(fake_extract))
+    monkeypatch.setattr(GeminiVisionService, "extract_from_text", staticmethod(fake_extract))
 
 
 def stub_ocr_text(monkeypatch, text: str) -> None:
@@ -86,6 +86,12 @@ def stub_ocr_text(monkeypatch, text: str) -> None:
 
 def test_gemini_primary_extracts_normal_package(monkeypatch):
     enable_gemini_primary(monkeypatch)
+    stub_ocr_text(
+        monkeypatch,
+        "Tasty Bites Chips\nPotato Chips\nNet Quantity 200 g\nMRP Rs. 120 (Incl. of all taxes)\n"
+        "Manufactured by: Tasty Bites Snacks Pvt. Ltd.\nCustomer Care: 1800 123 4567\n"
+        "FSSAI Lic. No. 12345678901234",
+    )
     stub_gemini(
         monkeypatch,
         brand_or_commodity_name="Tasty Bites Chips",
@@ -122,6 +128,7 @@ def test_gemini_primary_extracts_normal_package(monkeypatch):
 
 def test_gemini_extracts_mrp_correctly(monkeypatch):
     enable_gemini_primary(monkeypatch)
+    stub_ocr_text(monkeypatch, "Premium Snacks\nNet Quantity 200 g\nMRP Rs. 120 (Incl. of all taxes)")
     stub_gemini(
         monkeypatch,
         mrp="Rs. 120",
@@ -145,6 +152,7 @@ def test_gemini_extracts_mrp_correctly(monkeypatch):
 
 def test_gemini_extracts_net_quantity_correctly(monkeypatch):
     enable_gemini_primary(monkeypatch)
+    stub_ocr_text(monkeypatch, "Premium Rice\nNet Quantity 500 g")
     stub_gemini(monkeypatch, net_quantity="500 g", quantity_unit="g")
 
     pi = scan(Image.new("RGB", (600, 600), "white")).json()["product_information"]
@@ -171,8 +179,12 @@ def test_nutrition_value_is_rejected_as_net_quantity():
 
 def test_nutrition_value_not_in_pipeline_net_quantity(monkeypatch):
     enable_gemini_primary(monkeypatch)
-    # Gemini correctly ignores the nutrition row; the only quantity is the real
-    # net quantity.
+    # The OCR text contains a nutrition table and the real net quantity; Gemini
+    # correctly ignores the nutrition row.
+    stub_ocr_text(
+        monkeypatch,
+        "Premium Biscuits\nNet Quantity 1 kg\nNutrition Information\nCarbohydrate 46.3g\nProtein 8g\nTotal Sugars 20g",
+    )
     stub_gemini(monkeypatch, net_quantity="1 kg", quantity_unit="kg")
 
     pi = scan(Image.new("RGB", (600, 600), "white")).json()["product_information"]
@@ -195,6 +207,11 @@ def test_nutrition_text_is_rejected_as_manufacturer():
 
 def test_manufacturer_context_never_contains_nutrition(monkeypatch):
     enable_gemini_primary(monkeypatch)
+    stub_ocr_text(
+        monkeypatch,
+        "Tasty Bites Chips\nNet Quantity 120 g\nNutrition Information\nCarbohydrate 46.3g\n"
+        "Manufactured & Packed by: Tasty Bites Snacks Pvt. Ltd.\nMumbai, MH - 400001",
+    )
     stub_gemini(
         monkeypatch,
         manufacturer_name="Tasty Bites Snacks Pvt. Ltd.",
@@ -216,6 +233,7 @@ def test_manufacturer_context_never_contains_nutrition(monkeypatch):
 
 def test_veg_is_mapped_to_vegetarian_mark_not_brand(monkeypatch):
     enable_gemini_primary(monkeypatch)
+    stub_ocr_text(monkeypatch, "Tasty Bites Chips\nVEG\nNet Quantity 100 g")
     stub_gemini(
         monkeypatch,
         brand_or_commodity_name="Tasty Bites Chips",
@@ -244,6 +262,11 @@ def test_veg_symbol_not_brand_at_validation_layer():
 
 def test_manufacturer_packer_context(monkeypatch):
     enable_gemini_primary(monkeypatch)
+    stub_ocr_text(
+        monkeypatch,
+        "Tasty Bites Chips\nManufactured by: Tasty Bites Snacks Pvt. Ltd.\nMumbai, MH - 400001\n"
+        "Packed by: Tasty Bites Snacks Pvt. Ltd.\nMumbai, MH - 400001",
+    )
     stub_gemini(
         monkeypatch,
         manufacturer_name="Tasty Bites Snacks Pvt. Ltd.",
@@ -265,6 +288,10 @@ def test_manufacturer_packer_context(monkeypatch):
 
 def test_date_context_distinguishes_mfg_pkd_best_before(monkeypatch):
     enable_gemini_primary(monkeypatch)
+    stub_ocr_text(
+        monkeypatch,
+        "Tasty Bites Chips\nMFD 01/2026\nBest Before 6 months from packaging",
+    )
     stub_gemini(
         monkeypatch,
         manufacturing_date="01/2026",
@@ -291,6 +318,7 @@ def test_dates_are_normalized_to_canonical_format():
 
 def test_customer_care_phone_cleaned(monkeypatch):
     enable_gemini_primary(monkeypatch)
+    stub_ocr_text(monkeypatch, "Tasty Bites Chips\nCustomer Care: 1800 123 4567\nToll Free: 1800 123 4567")
     stub_gemini(monkeypatch, customer_care_phone="1800 123 4567", toll_free_number="1800 123 4567")
 
     pi = scan(Image.new("RGB", (600, 600), "white")).json()["product_information"]
@@ -357,7 +385,7 @@ def test_gemini_api_failure_triggers_ocr_fallback(monkeypatch):
 
 def test_gemini_missing_api_key_returns_not_configured(monkeypatch):
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "")
-    result = GeminiVisionService.extract("", None)
+    result = GeminiVisionService.extract_from_text("Some OCR text")
     assert result.success is False
     assert "not configured" in (result.error or "")
 
@@ -379,8 +407,9 @@ def test_gemini_fenced_json_parsed():
 
 def test_poor_image_still_produces_report(monkeypatch):
     enable_gemini_primary(monkeypatch)
+    stub_ocr_text(monkeypatch, "Snacks\nNet Quantity 200 g\nMRP Rs. 120")
 
-    def fake_extract(image_ref, pil_image=None):
+    def fake_extract(combined_text, front_text=None, back_text=None):
         return GeminiVisionResult(
             success=True,
             product_fields=make_fields(mrp="Rs. 120", net_quantity="200 g"),
@@ -391,7 +420,7 @@ def test_poor_image_still_produces_report(monkeypatch):
             confidence_details={"overall_visual_confidence": 35},
         )
 
-    monkeypatch.setattr(GeminiVisionService, "extract", staticmethod(fake_extract))
+    monkeypatch.setattr(GeminiVisionService, "extract_from_text", staticmethod(fake_extract))
 
     data = scan(Image.new("RGB", (600, 600), (60, 60, 60))).json()
 
@@ -408,6 +437,7 @@ def test_poor_image_still_produces_report(monkeypatch):
 
 def test_partial_fields_do_not_fail_pipeline(monkeypatch):
     enable_gemini_primary(monkeypatch)
+    stub_ocr_text(monkeypatch, "Snacks\nMRP Rs. 120")
     stub_gemini(monkeypatch, mrp="Rs. 120")
 
     data = scan(Image.new("RGB", (600, 600), "white")).json()
@@ -425,6 +455,7 @@ def test_partial_fields_do_not_fail_pipeline(monkeypatch):
 
 def test_no_hallucinated_values(monkeypatch):
     enable_gemini_primary(monkeypatch)
+    stub_ocr_text(monkeypatch, "Tasty Bites Chips\nMRP Rs. 120")
     stub_gemini(monkeypatch, brand_or_commodity_name="Tasty Bites Chips", mrp="Rs. 120")
 
     pi = scan(Image.new("RGB", (600, 600), "white")).json()["product_information"]
@@ -443,6 +474,7 @@ def test_no_hallucinated_values(monkeypatch):
 
 def test_api_scan_contract_unchanged(monkeypatch):
     enable_gemini_primary(monkeypatch)
+    stub_ocr_text(monkeypatch, "Tasty Bites Chips\nMRP Rs. 120 (Incl. of all taxes)")
     stub_gemini(
         monkeypatch,
         brand_or_commodity_name="Tasty Bites Chips",
@@ -497,8 +529,17 @@ def _problematic_label_image() -> Image.Image:
 def test_real_image_problematic_label_is_mapped_correctly(monkeypatch):
     """The label that previously produced
     Manufacturer: '& PACKED BY Carbohydrate 46.3g Total Suga₹ 128 Tasty Bites Snacks Pvt. Ltd'
-    and Brand: 'VEG' must now be extracted correctly under Gemini primary."""
+    and Brand: 'VEG' must now be extracted correctly. The Google Vision OCR
+    pass (stubbed here with the label text) feeds Gemini; Gemini only sees text."""
     enable_gemini_primary(monkeypatch)
+    stub_ocr_text(
+        monkeypatch,
+        "Tasty Bites Snacks\nPotato Chips\nVEG\nNet Quantity: 120 g\n"
+        "MRP Rs. 120.00 (Incl. of all taxes)\nNutrition Information\n"
+        "Energy 531 kcal\nCarbohydrate 46.3g\nTotal Sugars 20g\nProtein 8g\nSodium 200mg\n"
+        "Manufactured & Packed by:\nTasty Bites Snacks Pvt. Ltd.\nMumbai, MH - 400001\n"
+        "Customer Care: 1800 123 4567\nFSSAI Lic. No. 12345678901234",
+    )
     stub_gemini(
         monkeypatch,
         brand_or_commodity_name="Tasty Bites Snacks",
@@ -548,20 +589,47 @@ def test_real_image_problematic_label_is_mapped_correctly(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Pipeline-level: Gemini primary bypasses OCR
+# Pipeline-level: OCR first, then Gemini receives the OCR text
 # ---------------------------------------------------------------------------
 
 
-def test_gemini_primary_never_invokes_ocr(monkeypatch):
+def test_gemini_receives_ocr_text_not_image(monkeypatch):
+    """The new flow always runs OCR first and passes the combined OCR text to
+    Gemini. Gemini must receive text, never the raw image."""
     enable_gemini_primary(monkeypatch)
-    stub_gemini(monkeypatch, mrp="Rs. 120")
 
-    def _forbidden_ocr_call(image_ref):
-        raise AssertionError("OCR was invoked while Gemini primary succeeded")
+    captured = {}
 
-    monkeypatch.setattr(scan_route, "_run_ocr", _forbidden_ocr_call)
+    def fake_extract(combined_text, front_text=None, back_text=None):
+        captured["combined_text"] = combined_text
+        captured["front_text"] = front_text
+        returned = make_fields(
+            mrp="Rs. 120",
+            brand_or_commodity_name="Premium Rice",
+            net_quantity="5 kg",
+            expiry_date="6 months from packaging",
+        )
+        return GeminiVisionResult(
+            success=True,
+            product_fields=returned,
+            raw_extraction={},
+            image_quality="GOOD",
+            readability_quality="HIGH",
+        )
+
+    monkeypatch.setattr(GeminiVisionService, "extract_from_text", staticmethod(fake_extract))
+    stub_ocr_text(
+        monkeypatch,
+        "PREMIUM RICE\nNet Quantity 5 kg\nMRP Rs. 120 (Incl. of all taxes)\n"
+        "MFD 01/2026\nExpiry 6 months from packaging\nManufacturer: Acme Foods Pvt Ltd",
+    )
 
     data = scan(Image.new("RGB", (600, 600), "white")).json()
 
     assert data["extraction_source"] == "gemini_vision"
     assert data["product_information"]["mrp"]["value"] == "Rs. 120"
+    assert data["product_information"]["brand_or_commodity_name"]["value"] == "Premium Rice"
+    # Gemini received the OCR text (not the image) — the combined text includes
+    # the label lines stubbed into the OCR engine.
+    assert "Net Quantity 5 kg" in captured["combined_text"]
+    assert captured["front_text"] is not None

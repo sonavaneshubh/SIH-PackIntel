@@ -166,10 +166,8 @@ export function parsePipelineMeta(raw: unknown): {
 export function formatExtractionSource(meta: { extraction_source?: string }) {
   const source = meta?.extraction_source;
   if (source === 'ocr+vision') return 'OCR + Vision';
-  if (source === 'vision') return 'Google Cloud Vision / Gemini';
-  return 'OCR Engine';
   if (source === 'gemini_vision') return 'Gemini Vision';
-  if (source === 'vision') return 'Vision';
+  if (source === 'vision') return 'Google Cloud Vision / Gemini';
   return 'OCR';
 }
 

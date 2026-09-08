@@ -9,12 +9,127 @@ import {
   saveExtractedLabel,
   saveComplianceResults,
   updateInspection,
-  getInspectionById,
   logSupabaseError,
 } from '@/lib/supabase/inspectionService';
 import { Inspection, ExtractedLabelInsert, ComplianceResultInsert, InspectionImage } from '@/types/database';
-import { API_BASE_URL } from '@/lib/api';
+import { API_BASE_URL, assertApiConfigured, API_CONFIG_ERROR_MESSAGE } from '@/lib/api';
+import type { ScanResponse } from '@/lib/api';
 import { deriveInspectionMetadataFromExtraction } from '@/lib/extractionMetadata';
+
+// Hard cap for the full two-image scan request. The backend runs detection →
+// quality → OCR → extraction → compliance for both sides; give it enough room,
+// but never let the UI hang indefinitely (the server side has its own 60s OCR
+// timeout, so this ceiling is strictly above the pipeline upper bound).
+const SCAN_REQUEST_TIMEOUT_MS = 90_000;
+
+// The backend's extracted_declarations arrive as loosely-typed JSON. Mirrors
+// the old `any || null` behavior: falsy values are dropped, anything else is
+// stored as text so it can be written into the extracted_labels columns.
+function asNullableString(value: unknown): string | null {
+  if (!value) return null;
+  return typeof value === 'string' ? value : String(value);
+}
+
+export interface ScanErrorInfo {
+  friendly: string;
+  code?: string;
+}
+
+function userFacingScanError(error: unknown): ScanErrorInfo {
+  if (error instanceof ScanRequestFailure) {
+    return { friendly: error.message, code: error.code };
+  }
+  if (error instanceof ScanHttpError) {
+    return { friendly: error.friendly, code: error.code };
+  }
+  if (error instanceof Error && error.message === API_CONFIG_ERROR_MESSAGE) {
+    return { friendly: error.message, code: 'API_NOT_CONFIGURED' };
+  }
+  if (error instanceof DOMException && error.name === 'AbortError') {
+    return {
+      friendly:
+        'The scan server did not respond in time. Please check your connection and try again.',
+      code: 'SCAN_TIMEOUT',
+    };
+  }
+  if (error instanceof TypeError) {
+    // fetch only throws TypeError for network-level failures (incl. CORS).
+    return {
+      friendly:
+        "We couldn't reach the scan server. Please check your internet connection and try again.",
+      code: 'NETWORK_ERROR',
+    };
+  }
+  return {
+    friendly: 'The scan could not be completed. Please try again.',
+    code: 'UNKNOWN_ERROR',
+  };
+}
+
+class ScanHttpError extends Error {
+  friendly: string;
+  code?: string;
+  status?: number;
+
+  constructor(friendly: string, code?: string, status?: number, detail?: string) {
+    super(detail || friendly);
+    this.name = 'ScanHttpError';
+    this.friendly = friendly;
+    this.code = code;
+    this.status = status;
+  }
+}
+
+class ScanRequestFailure extends Error {
+  code?: string;
+
+  constructor(info: ScanErrorInfo) {
+    super(info.friendly);
+    this.name = 'ScanRequestFailure';
+    this.code = info.code;
+  }
+}
+
+async function readApiErrorDetail(response: Response): Promise<string> {
+  try {
+    const data = await response.json();
+    const detail = (data as { detail?: unknown })?.detail;
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail)) {
+      return detail
+        .map((entry) => (entry && typeof entry === 'object' ? (entry as { msg?: string }).msg : String(entry)))
+        .filter(Boolean)
+        .join('; ');
+    }
+    const message = (data as { message?: unknown })?.message;
+    if (typeof message === 'string') return message;
+    const error = (data as { error?: unknown })?.error;
+    if (error && typeof error === 'object') {
+      const errorMessage = (error as { message?: unknown }).message;
+      if (typeof errorMessage === 'string') return errorMessage;
+    }
+  } catch {
+    // Non-JSON error body; fall through to the generic textual path.
+  }
+  return `The scan server returned an error (HTTP ${response.status}).`;
+}
+
+async function requestScan(form: FormData): Promise<Response> {
+  assertApiConfigured();
+
+  const controller = new AbortController();
+  const timeoutId = globalThis.setTimeout(() => controller.abort(), SCAN_REQUEST_TIMEOUT_MS);
+
+  try {
+    return await fetch(`${API_BASE_URL}/api/scan`, {
+      method: 'POST',
+      body: form,
+      signal: controller.signal,
+    });
+  } finally {
+    globalThis.clearTimeout(timeoutId);
+  }
+}
 
 export interface ScanPipelineState {
   step: 'idle' | 'creating' | 'uploading' | 'ocr' | 'extracting' | 'compliance' | 'completed' | 'error';
@@ -56,6 +171,8 @@ export function useScanPipeline() {
 
   // Use a ref to track the current inspection for error handling
   const inspectionRef = useRef<Inspection | null>(null);
+  // Guards against duplicate concurrent scans (double-tap on Scan Product).
+  const scanRunningRef = useRef(false);
 
   const updateState = useCallback((updates: Partial<ScanPipelineState>) => {
     setState(prev => {
@@ -78,6 +195,10 @@ export function useScanPipeline() {
     },
     backFile?: File
   ) => {
+    if (scanRunningRef.current) {
+      return { success: false, error: 'A scan is already in progress.', errorCode: 'SCAN_IN_PROGRESS' };
+    }
+    scanRunningRef.current = true;
     updateState({ step: 'creating', error: null, progress: 5 });
 
     let currentInspection: Inspection | null = null;
@@ -149,17 +270,37 @@ export function useScanPipeline() {
       multipartForm.append('product_category', productData.product_category);
       multipartForm.append('is_imported', String(productData.is_imported));
 
-      const ocrResponse = await fetch(`${API_BASE_URL}/api/scan`, {
-        method: 'POST',
-        body: multipartForm,
-      });
-
-      if (!ocrResponse.ok) {
-        const errorData = await ocrResponse.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'OCR processing failed');
+      let ocrResponse: Response;
+      try {
+        ocrResponse = await requestScan(multipartForm);
+      } catch (error) {
+        throw new ScanRequestFailure(userFacingScanError(error));
       }
 
-      const ocrData = await ocrResponse.json();
+      if (!ocrResponse.ok) {
+        const detail = await readApiErrorDetail(ocrResponse);
+        const friendly =
+          ocrResponse.status >= 500
+            ? 'The scan server hit an error while processing the image. Please try again in a moment.'
+            : 'The scan request was rejected because the images could not be read. Please retry with clearer front and back images.';
+        throw new ScanHttpError(
+          friendly,
+          ocrResponse.status >= 500 ? 'SCAN_SERVER_ERROR' : 'SCAN_REQUEST_REJECTED',
+          ocrResponse.status,
+          detail,
+        );
+      }
+
+      let ocrData: ScanResponse;
+      try {
+        ocrData = await ocrResponse.json();
+      } catch {
+        throw new ScanHttpError(
+          'The scan server returned an unexpected response. Please try again.',
+          'INVALID_SCAN_RESPONSE',
+          ocrResponse.status,
+        );
+      }
       const ocrText = ocrData.ocr_raw_text || '';
       const extractedDeclarations = ocrData.extracted_declarations || {};
       const productInformation =
@@ -244,17 +385,23 @@ export function useScanPipeline() {
       // Step 5: Save extracted labels (from OCR text only, never request metadata)
       const labelData: ExtractedLabelInsert = {
         inspection_id: inspection.id,
-        manufacturer_name: extractedDeclarations.manufacturer_name || null,
-        packer_name: extractedDeclarations.packer_name || null,
-        importer_name: extractedDeclarations.importer_name || null,
-        commodity_name: extractedDeclarations.commodity_name || extractedDeclarations.common_generic_name || null,
-        net_quantity: extractedDeclarations.net_quantity || null,
-        mrp: extractedDeclarations.mrp || null,
-        month_year_packed: extractedDeclarations.month_year_packed || extractedDeclarations.mfg_date || null,
-        customer_care_details: extractedDeclarations.customer_care_details || extractedDeclarations.consumer_care || null,
-        country_of_origin: extractedDeclarations.country_of_origin || null,
+        manufacturer_name: asNullableString(extractedDeclarations.manufacturer_name),
+        packer_name: asNullableString(extractedDeclarations.packer_name),
+        importer_name: asNullableString(extractedDeclarations.importer_name),
+        commodity_name:
+          asNullableString(extractedDeclarations.commodity_name) ||
+          asNullableString(extractedDeclarations.common_generic_name),
+        net_quantity: asNullableString(extractedDeclarations.net_quantity),
+        mrp: asNullableString(extractedDeclarations.mrp),
+        month_year_packed:
+          asNullableString(extractedDeclarations.month_year_packed) ||
+          asNullableString(extractedDeclarations.mfg_date),
+        customer_care_details:
+          asNullableString(extractedDeclarations.customer_care_details) ||
+          asNullableString(extractedDeclarations.consumer_care),
+        country_of_origin: asNullableString(extractedDeclarations.country_of_origin),
         other_declarations: JSON.stringify({
-          notes: extractedDeclarations.other_declarations || '',
+          notes: asNullableString(extractedDeclarations.other_declarations) || '',
           product_information: productInformation,
           extraction_source: ocrData.extraction_source || 'ocr',
           vision_used: Boolean(ocrData.vision_used),
@@ -334,8 +481,8 @@ export function useScanPipeline() {
       return { success: true, inspectionId: inspection.id };
 
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      updateState({ step: 'error', error: errorMessage });
+      const errorInfo = userFacingScanError(err);
+      updateState({ step: 'error', error: errorInfo.friendly });
 
       // If inspection was created, mark as failed
       const inspectionToUpdate = currentInspection || inspectionRef.current;
@@ -343,11 +490,14 @@ export function useScanPipeline() {
         await updateInspection(inspectionToUpdate.id, {
           status: 'failed',
           product_name: null,
-          notes: `Pipeline failed: ${errorMessage}`,
+          notes: `Pipeline failed: ${errorInfo.friendly}`,
         });
       }
 
-      return { success: false, error: errorMessage };
+      return { success: false, error: errorInfo.friendly, errorCode: errorInfo.code };
+    } finally {
+      // Always re-arm the scanner — on success, failure, timeout, or abort.
+      scanRunningRef.current = false;
     }
   }, [updateState, router]);
 

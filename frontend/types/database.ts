@@ -23,6 +23,14 @@ export type ImageType = 'label_front' | 'label_back' | 'label_side' | 'product_f
 export type UserRole = 'inspector' | 'admin';
 export type VerificationStatus = 'pending' | 'approved' | 'rejected';
 
+// Priority / risk level derived from the existing compliance fields. Critical
+// and High are considered "high-priority" for the High Priority Inspections
+// page; Medium and Low are not.
+export type InspectionPriority = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+
+// Count of scored inspections at each derived priority level.
+export type PriorityDistribution = Record<InspectionPriority, number>;
+
 // ─── profiles ────────────────────────────────────────────────────────────────
 export interface Profile {
   id: string;                     // = auth.users.id
@@ -217,6 +225,15 @@ export interface InspectionWithDetails extends Inspection {
   compliance_results: ComplianceResultRow[];
   inspection_images: InspectionImage[];
   inspection_reports: InspectionReport[];
+}
+
+// ─── High Priority Inspections ──────────────────────────────────────────────
+// A completed inspection whose priority (derived from the real risk_score the
+// compliance engine persisted) is Critical or High, joined with its actual
+// rule-level compliance results so violation counts are real scan data.
+export interface HighPriorityInspectionRecord extends Inspection {
+  priority: 'CRITICAL' | 'HIGH';
+  compliance_results: ComplianceResultRow[];
 }
 
 // ─── Dashboard Stats ─────────────────────────────────────────────────────────

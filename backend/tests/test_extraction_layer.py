@@ -170,7 +170,7 @@ def test_report_shape_keeps_raw_and_canonical_product():
     assert isinstance(report["product"], dict)
     assert set(report["product"].keys()) == set(PRODUCT_FIELDS)
     field = report["product"]["mrp"]
-    assert set(field.keys()) == {"value", "status", "confidence", "source", "evidence", "conflicts"}
+    assert set(field.keys()) == {"value", "status", "confidence", "source", "normalized", "evidence", "conflicts"}
 
 
 def test_apply_pipeline_overlays_fills_addresses_without_overwriting():
@@ -185,8 +185,8 @@ def test_apply_pipeline_overlays_fills_addresses_without_overwriting():
     assert pi.marketer_address.value == "Village-Bhat, Dist. Kutch Bhuj, Gujarat-370220"
 
 
-def test_every_field_is_26_field_schema():
+def test_every_field_is_28_field_schema():
     pi = extract_product("MRP Rs. 99\nNet Quantity 250 ml")
     assert isinstance(pi, ProductInformation)
     assert set(pi.as_dict().keys()) == set(PRODUCT_FIELDS)
-    assert len(PRODUCT_FIELDS) == 26
+    assert len(PRODUCT_FIELDS) == 28

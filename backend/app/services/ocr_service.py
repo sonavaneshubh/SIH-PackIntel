@@ -133,7 +133,14 @@ def get_google_vision_diagnostics() -> Dict[str, Any]:
 class OCRService:
     @staticmethod
     def _fetch_image(image_input: str) -> Image.Image:
-        """Fetches PIL Image from URL, data URI, or local file path."""
+        """Fetches PIL Image from URL, data URI, or local file path.
+
+        Every returned image is downscaled to ``MAX_IMAGE_DIMENSION`` and HTTP
+        downloads are capped at ``MAX_IMAGE_DOWNLOAD_MB`` so neither OCR nor
+        the vision providers ever hold a full-resolution pixel buffer.
+        """
+        from app.services.image_validation import limit_image_dimensions
+
         if not image_input or not isinstance(image_input, str):
             raise ValueError("No image URL or path provided")
 
@@ -143,7 +150,9 @@ class OCRService:
         if image_input.startswith("data:image"):
             header, base64_data = image_input.split(",", 1)
             image_bytes = base64.b64decode(base64_data)
-            return Image.open(io.BytesIO(image_bytes))
+            image = Image.open(io.BytesIO(image_bytes))
+            image.load()
+            return limit_image_dimensions(image)
 
         # Handle HTTP / HTTPS URL
         if image_input.startswith("http://") or image_input.startswith("https://"):
@@ -151,13 +160,25 @@ class OCRService:
                 image_input,
                 headers={"User-Agent": "PackIntel-OCR-Scanner/1.0"}
             )
+            max_bytes = (
+                max(1, int(getattr(settings, "MAX_IMAGE_DOWNLOAD_MB", 15))) * 1024 * 1024
+            )
             with urllib.request.urlopen(req, timeout=10) as response:
-                image_bytes = response.read()
-            return Image.open(io.BytesIO(image_bytes))
+                image_bytes = response.read(max_bytes + 1)
+            if len(image_bytes) > max_bytes:
+                raise ValueError(
+                    "The downloaded image exceeds the allowed download limit "
+                    f"({max_bytes // (1024 * 1024)} MB)."
+                )
+            image = Image.open(io.BytesIO(image_bytes))
+            image.load()
+            return limit_image_dimensions(image)
 
         # Handle local file path
         if os.path.exists(image_input):
-            return Image.open(image_input)
+            image = Image.open(image_input)
+            image.load()
+            return limit_image_dimensions(image)
 
         raise ValueError(f"Could not load image from input: {image_input[:50]}")
 

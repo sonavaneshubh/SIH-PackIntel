@@ -50,13 +50,6 @@ const PRIMARY_NAV: NavItem[] = [
     matchHint: (p) => p.startsWith("/scan"),
   },
   {
-    label: "Scan History",
-    href: "/history",
-    icon: "history",
-    prefetch: true,
-    matchHint: (p) => p === "/history",
-  },
-  {
     label: "Recent Inspections",
     href: "/recent-inspections",
     icon: "query_stats",
@@ -65,16 +58,10 @@ const PRIMARY_NAV: NavItem[] = [
   },
   {
     label: "High-Priority Inspections",
-    href: "/#high-priority",
+    href: "/high-priority-inspections",
     icon: "warning",
-    matchHint: () => false,
-  },
-  {
-    label: "Compliance Results",
-    href: "/results",
-    icon: "assignment_turned_in",
     prefetch: true,
-    matchHint: (p) => p === "/results",
+    matchHint: (p) => p === "/high-priority-inspections",
   },
   {
     label: "Rule Database",
@@ -139,6 +126,68 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const isApprovedInspector = verificationStatus === 'approved';
   const navItems = isApprovedInspector ? PRIMARY_NAV : LIMITED_NAV;
 
+  const handleSignOut = useCallback(() => {
+    signOut();
+    onClose();
+  }, [signOut, onClose]);
+
+  const navItems = [
+    {
+      label: "Dashboard",
+      href: "/",
+      icon: "dashboard",
+      isActive: pathname === "/" || pathname === "/dashboard",
+    },
+    {
+      label: "New Scan",
+      href: "/scan/new",
+      icon: "barcode_scanner",
+      isActive: pathname.startsWith("/scan"),
+    },
+    {
+      label: "Recent Inspections",
+      href: "/recent-inspections",
+      icon: "query_stats",
+      isActive: pathname === "/recent-inspections",
+    },
+    {
+      label: "High-Priority Inspections",
+      href: "/high-priority-inspections",
+      icon: "warning",
+      isActive: pathname === "/high-priority-inspections",
+    },
+    {
+      label: "Compliance Results",
+      href: "/results",
+      icon: "assignment_turned_in",
+      isActive: pathname === "/results",
+    },
+    {
+      label: "Rule Database",
+      href: "/rules",
+      icon: "gavel",
+      isActive: pathname === "/rules",
+    },
+    {
+      label: "Violation Analytics",
+      href: "/analytics",
+      icon: "analytics",
+      isActive: pathname === "/analytics",
+    },
+    {
+      label: "Reports",
+      href: "/reports",
+      icon: "description",
+      isActive: pathname === "/reports",
+    },
+    {
+      label: "Settings",
+      href: "/settings",
+      icon: "settings",
+      isActive: pathname === "/settings",
+    },
+  ];
+
   return (
     <>
       {/* Mobile-only backdrop */}
@@ -161,7 +210,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       */}
       <aside
         className={cn(
-          "fixed left-0 top-0 z-50 h-screen w-[260px] bg-[#0b0f12] shadow-2xl",
+          "fixed left-0 top-0 z-50 h-screen supports-[height:100dvh]:h-dvh w-[260px] bg-[#0b0f12] shadow-2xl",
           "flex flex-col",
           "transition-transform duration-300 ease-in-out",
           // closed: slide fully off-screen to the left
