@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { supabase } from '@/lib/supabase/client';
 import { getSignedImageUrl, normalizeExtractedLabel } from '@/lib/supabase/inspectionService';
+import { api, API_BASE_URL } from '@/lib/api';
 import {
   Inspection,
   ExtractedLabel,
@@ -139,10 +140,35 @@ export function ReportView() {
     [inspection, label, productInformation]
   );
 
-  const otherInfo = productInformation?.other_detected_information || {};
-
-  const handlePdf = () => {
-    setReportMessage('Preparing PDF of the current report...');
+  const handlePdf = async () => {
+    setReportMessage('Preparing your PDF report...');
+    // On touch/mobile devices the print dialog may be missing or unavailable,
+    // so download a real PDF file from the backend instead. Desktop keeps the
+    // print → "Save as PDF" flow.
+    const isMobile =
+      typeof navigator !== 'undefined' &&
+      (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+        (navigator.maxTouchPoints > 0 && window.innerWidth < 768));
+    if (isMobile && inspectionId) {
+      try {
+        const { download_url } = await api.generateReport({ inspection_id: inspectionId });
+        const url = download_url.startsWith('http')
+          ? download_url
+          : `${API_BASE_URL}${download_url}`;
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.rel = 'noopener noreferrer';
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        setReportMessage(
+          'Your PDF report download has started. If it did not start, open this page in Chrome for Android or Safari and use Share → Save to Files.'
+        );
+        return;
+      } catch {
+        setReportMessage('Downloading the PDF failed. Using the browser’s print dialog instead.');
+      }
+    }
     window.setTimeout(() => {
       window.print();
       setReportMessage('Choose “Save as PDF” as the printer in the dialog to download this report as a PDF.');
@@ -240,47 +266,6 @@ export function ReportView() {
             {reportMessage}
           </p>
         )}
-
-        {/* Source Images */}
-        <section className="mb-6">
-          <Card className="p-5">
-            <SectionHeading title="Source Images" subtitle="Scanned package label artwork (front & back)." />
-            {imageUrl || backImageUrl ? (
-              <div className={cn('grid gap-3', backImageUrl ? 'grid-cols-1 sm:grid-cols-2' : '')}>
-                {imageUrl && (
-                  <figure>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={imageUrl}
-                      alt="Front side of scanned package label"
-                      className="max-h-72 w-full rounded-lg border border-outline-variant bg-surface-container-low object-contain"
-                    />
-                    <figcaption className="mt-1 text-center text-[11px] font-semibold text-on-surface-variant">
-                      Front Side
-                    </figcaption>
-                  </figure>
-                )}
-                {backImageUrl && (
-                  <figure>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={backImageUrl}
-                      alt="Back side of scanned package label"
-                      className="max-h-72 w-full rounded-lg border border-outline-variant bg-surface-container-low object-contain"
-                    />
-                    <figcaption className="mt-1 text-center text-[11px] font-semibold text-on-surface-variant">
-                      Back Side
-                    </figcaption>
-                  </figure>
-                )}
-              </div>
-            ) : (
-              <div className="grid h-48 place-items-center rounded-lg bg-surface-container-low text-sm text-on-surface-variant">
-                Image preview unavailable
-              </div>
-            )}
-          </Card>
-        </section>
 
         {/* Score & confidence */}
         <section className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-[1.35fr_0.65fr]">
@@ -461,114 +446,36 @@ export function ReportView() {
               )}
             </Card>
 
-            {/* Other Detected Information (Distinct non-LM card) */}
-            <Card className="p-5 border-dashed border-outline-variant bg-surface-container-low/40">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-bold text-on-surface">Other Detected Information</h3>
-                <span className="text-[10px] bg-surface-container-high text-on-surface-variant px-2 py-0.5 rounded font-mono">
-                  Not evaluated under Legal Metrology compliance
-                </span>
+            {/* Pipeline & Image Quality Diagnostics */}
+            <Card className="p-5">
+              <SectionHeading title="Pipeline & Image Quality Diagnostics" subtitle="Independent from statutory compliance scores." />
+              <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                <QualityItem label="Image Quality" value={image ? 'Usable' : 'Unavailable'} />
+                <QualityItem label="OCR Status" value={rawOcr ? 'Readable text extracted' : 'No readable text'} />
+                <QualityItem
+                  label="OCR Confidence"
+                  value={
+                    image?.ocr_confidence ?? label?.extraction_confidence
+                      ? `${Math.round(image?.ocr_confidence ?? label?.extraction_confidence ?? 0)}%`
+                      : 'Not available'
+                  }
+                />
+                <QualityItem label="Extraction Engine" value={formatExtractionSource(pipelineMeta)} />
+                {pipelineMeta.vision_used && (
+                  <QualityItem label="Vision Verification" value="Multi-modal verified" />
+                )}
+                <QualityItem label="Overall Assessment" value={confidence.label} />
               </div>
-              <p className="text-xs text-on-surface-variant mb-3">
-                Detected package text (nutrition facts, brand, FSSAI, veg symbols) separated from Legal Metrology compliance scoring.
-              </p>
-              
-              <div className="space-y-2 text-xs">
-                {otherInfo.nutrition_info && Object.keys(otherInfo.nutrition_info).length > 0 && (
-                  <div className="bg-surface-container p-2 rounded">
-                    <span className="font-semibold text-on-surface">Nutrition Table Detected:</span>
-                    <div className="grid grid-cols-2 gap-1 mt-1 font-mono text-[11px] text-on-surface-variant">
-                      {Object.entries(otherInfo.nutrition_info).map(([k, v]) => (
-                        <span key={k}>{k}: {String(v)}</span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {otherInfo.brand_name && (
-                  <p><strong className="text-on-surface">Brand:</strong> {otherInfo.brand_name}</p>
-                )}
-                {otherInfo.batch_number && (
-                  <p><strong className="text-on-surface">Batch / Lot No:</strong> {otherInfo.batch_number}</p>
-                )}
-                {otherInfo.fssai_number && (
-                  <p><strong className="text-on-surface">FSSAI Licence:</strong> {otherInfo.fssai_number}</p>
-                )}
-                {otherInfo.vegetarian_mark && (
-                  <p><strong className="text-on-surface">Vegetarian Mark:</strong> {otherInfo.vegetarian_mark}</p>
-                )}
-              </div>
+              <details className="mt-5 border-t border-outline-variant pt-4">
+                <summary className="cursor-pointer text-sm font-semibold text-on-surface">
+                  View Raw OCR Text
+                </summary>
+                <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap rounded-lg bg-surface-container-lowest p-3 text-xs text-on-surface-variant font-mono">
+                  {rawOcr || 'No readable OCR text was detected.'}
+                </pre>
+              </details>
             </Card>
           </div>
-        </section>
-
-        {/* Source Image + Quality Diagnostics */}
-        <section className="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-[0.8fr_1.2fr]">
-          <Card className="p-5">
-            <SectionHeading title="Source Images" subtitle="Scanned package label artwork (front & back)." />
-            {imageUrl || backImageUrl ? (
-              <div className={cn('grid gap-3', backImageUrl ? 'grid-cols-1 sm:grid-cols-2' : '')}>
-                {imageUrl && (
-                  <figure>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={imageUrl}
-                      alt="Front side of scanned package label"
-                      className="max-h-72 w-full rounded-lg border border-outline-variant bg-surface-container-low object-contain"
-                    />
-                    <figcaption className="mt-1 text-center text-[11px] font-semibold text-on-surface-variant">
-                      Front Side
-                    </figcaption>
-                  </figure>
-                )}
-                {backImageUrl && (
-                  <figure>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={backImageUrl}
-                      alt="Back side of scanned package label"
-                      className="max-h-72 w-full rounded-lg border border-outline-variant bg-surface-container-low object-contain"
-                    />
-                    <figcaption className="mt-1 text-center text-[11px] font-semibold text-on-surface-variant">
-                      Back Side
-                    </figcaption>
-                  </figure>
-                )}
-              </div>
-            ) : (
-              <div className="grid h-48 place-items-center rounded-lg bg-surface-container-low text-sm text-on-surface-variant">
-                Image preview unavailable
-              </div>
-            )}
-          </Card>
-
-          <Card className="p-5">
-            <SectionHeading title="Pipeline & Image Quality Diagnostics" subtitle="Independent from statutory compliance scores." />
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <QualityItem label="Image Quality" value={image ? 'Usable' : 'Unavailable'} />
-              <QualityItem label="OCR Status" value={rawOcr ? 'Readable text extracted' : 'No readable text'} />
-              <QualityItem
-                label="OCR Confidence"
-                value={
-                  image?.ocr_confidence ?? label?.extraction_confidence
-                    ? `${Math.round(image?.ocr_confidence ?? label?.extraction_confidence ?? 0)}%`
-                    : 'Not available'
-                }
-              />
-              <QualityItem label="Extraction Engine" value={formatExtractionSource(pipelineMeta)} />
-              {pipelineMeta.vision_used && (
-                <QualityItem label="Vision Verification" value="Multi-modal verified" />
-              )}
-              <QualityItem label="Overall Assessment" value={confidence.label} />
-            </div>
-            <details className="mt-5 border-t border-outline-variant pt-4">
-              <summary className="cursor-pointer text-sm font-semibold text-on-surface">
-                View Raw OCR Text
-              </summary>
-              <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap rounded-lg bg-surface-container-lowest p-3 text-xs text-on-surface-variant font-mono">
-                {rawOcr || 'No readable OCR text was detected.'}
-              </pre>
-            </details>
-          </Card>
         </section>
 
         <footer className="report-footer mt-8 border-t border-outline-variant pt-5 text-xs text-on-surface-variant">
