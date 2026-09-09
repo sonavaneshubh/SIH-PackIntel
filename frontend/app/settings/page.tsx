@@ -331,7 +331,7 @@ export default function SettingsPage() {
       try {
         const { data, error } = await supabase
           .from('profiles')
-          .select('id, full_name, email, designation, department, organization, location, phone, inspector_employee_id, employee_id, created_at')
+          .select('id, full_name, email, designation, department, organization, location, phone, inspector_employee_id, employee_id, verification_token_hash, created_at')
           .eq('verification_status', 'pending')
           .or('role.in.(inspector),role.is.null')
           .order('created_at', { ascending: false });
@@ -774,6 +774,12 @@ export default function SettingsPage() {
                       <p className="mt-2 text-[10px] text-outline">
                         Registered {v.created_at ? new Date(v.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
                       </p>
+                      {!v.verification_token_hash && (
+                        <p className="mt-2 flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
+                          <span className="material-symbols-outlined text-[12px]">mail_off</span>
+                          No review email has been issued for this registration yet. Approve below or use &ldquo;Resend email&rdquo; to issue a fresh link.
+                        </p>
+                      )}
                     </div>
                     <div className="flex shrink-0 flex-wrap gap-2">
                       <Button
