@@ -13,6 +13,25 @@ interface HistoryInspection extends Inspection {
   display_risk_level: 'LOW' | 'HIGH' | 'CRITICAL';
 }
 
+function formatDate(createdAt?: string | null): string {
+  return new Date(createdAt || Date.now()).toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+function toBadgeStatus(displayStatus: HistoryInspection['display_status']): 'good' | 'warning' | 'error' | 'pending' {
+  if (displayStatus === 'PASS') return 'good';
+  if (displayStatus === 'FAIL') return 'error';
+  if (displayStatus === 'REVIEW') return 'warning';
+  return 'pending';
+}
+
+function resolveRiskScore(scan: HistoryInspection): number {
+  return scan.risk_score ?? (scan.display_status === 'FAIL' ? 85 : scan.display_status === 'REVIEW' ? 50 : 10);
+}
+
 export default function HistoryPage() {
   const [inspections, setInspections] = useState<HistoryInspection[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -129,81 +148,105 @@ export default function HistoryPage() {
         </div>
       </div>
 
-      {/* History Table */}
+      {/* History List */}
       <div className="bg-surface border border-outline-variant rounded-xl shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-surface-bright border-b border-outline-variant text-label-bold font-label-bold text-on-surface-variant uppercase tracking-wider text-xs">
-                <th className="py-3.5 px-4 w-44">Inspection ID</th>
-                <th className="py-3.5 px-4">Product Name</th>
-                <th className="py-3.5 px-4">Category</th>
-                <th className="py-3.5 px-4 w-32">Date</th>
-                <th className="py-3.5 px-4 w-36">Status</th>
-                <th className="py-3.5 px-4 w-28 text-center">Risk Score</th>
-                <th className="py-3.5 px-4 w-28 text-center">Action</th>
-              </tr>
-            </thead>
-            <tbody className="text-body-base font-body-base text-on-surface divide-y divide-outline-variant/60">
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-10 text-center text-body-base text-on-surface-variant">
-                    {searchTerm || statusFilter !== 'ALL'
-                      ? 'No matching inspections found.'
-                      : 'No inspections yet. Start your first scan to see history.'}
-                  </td>
-                </tr>
-              ) : (
-                filtered.map((scan) => (
-                  <tr key={scan.id} className="hover:bg-surface-container-lowest transition-colors h-14">
-                    <td className="py-2 px-4 font-data-tabular text-on-surface-variant font-medium text-xs">
-                      {scan.inspection_number}
-                    </td>
-                    <td className="py-2 px-4">
-                      <p className="font-semibold text-xs text-on-surface">{scan.product_name || 'Unknown Product'}</p>
-                      <p className="text-[11px] text-on-surface-variant">{scan.manufacturer_name || 'Manufacturer not specified'}</p>
-                    </td>
-                    <td className="py-2 px-4 text-xs text-on-surface-variant">{scan.product_category || 'N/A'}</td>
-                    <td className="py-2 px-4 font-data-tabular text-on-surface-variant text-xs">
-                      {new Date(scan.created_at || Date.now()).toLocaleDateString('en-GB', {
-                        day: '2-digit',
-                        month: 'short',
-                        year: 'numeric',
-                      })}
-                    </td>
-                    <td className="py-2 px-4">
-                      <StatusBadge
-                        status={
-                          scan.display_status === "PASS"
-                            ? "good"
-                            : scan.display_status === "FAIL"
-                              ? "error"
-                              : scan.display_status === "REVIEW"
-                                ? "warning"
-                                : "pending"
-                        }
-                      />
-                    </td>
-                    <td className="py-2 px-4 text-center">
-                      <RiskBadge
-                        score={scan.risk_score ?? (scan.display_status === 'FAIL' ? 85 : scan.display_status === 'REVIEW' ? 50 : 10)}
-                        level={scan.display_risk_level}
-                      />
-                    </td>
-                    <td className="py-2 px-4 text-center">
-                      <Link
-                        href={`/results?inspection=${scan.id}`}
-                        className="text-primary hover:underline text-label-bold font-label-bold text-xs"
-                      >
-                        View Details
-                      </Link>
-                    </td>
+        {filtered.length === 0 ? (
+          <div className="py-10 px-4 text-center text-body-base font-body-base text-on-surface-variant">
+            {searchTerm || statusFilter !== 'ALL'
+              ? 'No matching inspections found.'
+              : 'No inspections yet. Start your first scan to see history.'}
+          </div>
+        ) : (
+          <>
+            {/* Desktop table */}
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-surface-bright border-b border-outline-variant text-label-bold font-label-bold text-on-surface-variant uppercase tracking-wider text-xs">
+                    <th className="py-3.5 px-4 w-44">Inspection ID</th>
+                    <th className="py-3.5 px-4">Product Name</th>
+                    <th className="py-3.5 px-4">Category</th>
+                    <th className="py-3.5 px-4 w-32">Date</th>
+                    <th className="py-3.5 px-4 w-36">Status</th>
+                    <th className="py-3.5 px-4 w-28 text-center">Risk Score</th>
+                    <th className="py-3.5 px-4 w-28 text-center">Action</th>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                </thead>
+                <tbody className="text-body-base font-body-base text-on-surface divide-y divide-outline-variant/60">
+                  {filtered.map((scan) => (
+                    <tr key={scan.id} className="hover:bg-surface-container-lowest transition-colors h-14">
+                      <td className="py-2 px-4 font-data-tabular text-on-surface-variant font-medium text-xs">
+                        {scan.inspection_number}
+                      </td>
+                      <td className="py-2 px-4">
+                        <p className="font-semibold text-xs text-on-surface">{scan.product_name || 'Unknown Product'}</p>
+                        <p className="text-[11px] text-on-surface-variant">{scan.manufacturer_name || 'Manufacturer not specified'}</p>
+                      </td>
+                      <td className="py-2 px-4 text-xs text-on-surface-variant">{scan.product_category || 'N/A'}</td>
+                      <td className="py-2 px-4 font-data-tabular text-on-surface-variant text-xs">
+                        {formatDate(scan.created_at)}
+                      </td>
+                      <td className="py-2 px-4">
+                        <StatusBadge status={toBadgeStatus(scan.display_status)} />
+                      </td>
+                      <td className="py-2 px-4 text-center">
+                        <RiskBadge score={resolveRiskScore(scan)} level={scan.display_risk_level} />
+                      </td>
+                      <td className="py-2 px-4 text-center">
+                        <Link
+                          href={`/results?inspection=${scan.id}`}
+                          className="text-primary hover:underline text-label-bold font-label-bold text-xs"
+                        >
+                          View Details
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile card list */}
+            <div className="divide-y divide-outline-variant/60 md:hidden">
+              {filtered.map((scan) => (
+                <div key={scan.id} className="flex flex-col gap-3 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-on-surface">
+                        {scan.product_name || 'Unknown Product'}
+                      </p>
+                      <p className="mt-0.5 break-words text-xs text-on-surface-variant">
+                        <span className="font-mono font-medium">{scan.inspection_number}</span>
+                        {scan.manufacturer_name ? (
+                          <span> · {scan.manufacturer_name}</span>
+                        ) : null}
+                      </p>
+                    </div>
+                    <StatusBadge status={toBadgeStatus(scan.display_status)} />
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0 text-xs text-on-surface-variant">
+                      {scan.product_category ? (
+                        <p className="truncate">{scan.product_category}</p>
+                      ) : null}
+                      <p className="font-data-tabular">{formatDate(scan.created_at)}</p>
+                    </div>
+                    <RiskBadge score={resolveRiskScore(scan)} level={scan.display_risk_level} />
+                  </div>
+
+                  <Link
+                    href={`/results?inspection=${scan.id}`}
+                    className="flex min-h-[44px] items-center justify-center gap-1 rounded-lg border border-outline-variant bg-surface-container-low px-4 py-2.5 text-label-bold font-label-bold text-primary transition-colors hover:bg-surface-container-high focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  >
+                    View Details
+                    <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                  </Link>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </AppShell>
   );
@@ -232,7 +275,8 @@ function HistorySkeleton() {
       </div>
 
       <div className="bg-surface border border-outline-variant rounded-xl shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Desktop skeleton table */}
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-surface-bright border-b border-outline-variant">
@@ -255,6 +299,22 @@ function HistorySkeleton() {
               ))}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile skeleton cards */}
+        <div className="divide-y divide-outline-variant/60 md:hidden">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="flex flex-col gap-3 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="h-4 w-3/4 rounded bg-slate-200" />
+                  <div className="h-3 w-1/2 rounded bg-slate-200/70" />
+                </div>
+                <div className="h-6 w-16 shrink-0 rounded-full bg-slate-200" />
+              </div>
+              <div className="h-8 w-full rounded-lg bg-slate-200/80" />
+            </div>
+          ))}
         </div>
       </div>
     </div>

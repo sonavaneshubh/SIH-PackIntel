@@ -198,7 +198,7 @@ export function OcrAnalysisView() {
             </span>
           </div>
 
-          <div className="relative flex-1 bg-surface-container-low rounded border border-outline-variant overflow-hidden min-h-[420px] flex items-center justify-center">
+          <div className="relative flex-1 bg-surface-container-low rounded border border-outline-variant overflow-hidden min-h-[280px] sm:min-h-[420px] flex items-center justify-center">
             {/* Label Image */}
             {imageUrl ? (
               <img
@@ -237,7 +237,7 @@ export function OcrAnalysisView() {
                         height: `${box.height * 100}%`,
                       }}
                     >
-                      <div className={`${color} text-white text-[10px] font-label-bold px-1.5 py-0.5 absolute -top-5 left-0 rounded-t shadow-xs whitespace-nowrap`}>
+                      <div className={`${color} text-white text-[10px] font-label-bold px-1.5 py-0.5 absolute top-0 left-0 rounded shadow-xs max-w-full truncate`}>
                         {entity.name} - {Math.round(entity.confidence)}%
                       </div>
                     </div>

@@ -180,7 +180,7 @@ function HeroSection() {
               {/* Scanner Content Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
                 {/* Chips Package with Bounding Box Overlay */}
-                <div className="relative rounded-2xl overflow-hidden shadow-2xl flex flex-col items-center justify-center h-80 border-2 border-dashed border-emerald-400/80 group select-none bg-slate-50">
+                <div className="relative rounded-2xl overflow-hidden shadow-2xl flex flex-col items-center justify-center h-64 sm:h-80 border-2 border-dashed border-emerald-400/80 group select-none bg-slate-50">
                   <img
                     src="/screen.png"
                     alt="GoodDay Classic Masala Potato Chips"

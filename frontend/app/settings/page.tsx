@@ -154,9 +154,9 @@ function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (
 
 function InfoRow({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
   return (
-    <div className="flex justify-between items-center py-2.5 border-b border-outline-variant/50 last:border-0">
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 py-2.5 border-b border-outline-variant/50 last:border-0">
       <span className="text-xs font-medium text-on-surface">{label}</span>
-      <span className={`text-xs text-on-surface-variant ${mono ? 'font-mono text-primary' : ''}`}>
+      <span className={`min-w-0 break-words text-xs text-on-surface-variant ${mono ? 'font-mono text-primary' : ''}`}>
         {value}
       </span>
     </div>

@@ -61,7 +61,7 @@ export function InspectionActivityCard({ items }: InspectionActivityCardProps) {
       <div className="relative flex w-full flex-col">
         <svg
           viewBox={`0 0 ${W} ${H}`}
-          className="h-[220px] w-full"
+          className="h-40 w-full sm:h-[220px]"
           role="img"
           aria-label="Inspection activity over the last 30 days"
           preserveAspectRatio="none"

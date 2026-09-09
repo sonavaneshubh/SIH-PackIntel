@@ -234,10 +234,11 @@ export function AnalyzingView() {
             )}
           </ul>
 
-          <div className="mt-6 pt-4 border-t border-outline-variant/60 flex justify-between items-center">
+          <div className="mt-6 pt-4 border-t border-outline-variant/60 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
             <Button
               variant="secondary"
               size="sm"
+              className="w-full sm:w-auto"
               onClick={() => router.push('/scan/new')}
               disabled={isCompleted}
             >
@@ -248,6 +249,7 @@ export function AnalyzingView() {
               size="sm"
               icon="arrow_forward"
               iconPosition="right"
+              className="w-full sm:w-auto"
               onClick={() => router.push(`/results?inspection=${inspectionId}`)}
               disabled={!isCompleted}
             >
