@@ -70,6 +70,13 @@ async def check_compliance(
                 })
 
             if compliance_records:
+                # Idempotent write: an inspection must have one result row per
+                # rule. Remove any previously stored results before inserting so
+                # a re-run of the check never duplicates rule rows (mirrors the
+                # unique index on (inspection_id, rule_code)).
+                supabase.table("compliance_results").delete().eq(
+                    "inspection_id", request.inspection_id
+                ).execute()
                 supabase.table("compliance_results").insert(compliance_records).execute()
         except Exception as e:
             # Log error but don't fail the request

@@ -30,6 +30,28 @@ import { cn } from '@/lib/utils';
 
 type LoadState = 'loading' | 'not_found' | 'error' | 'ready';
 
+// compliance_results is written idempotently per (inspection_id, rule_code), but
+// rows written before the unique index existed may still contain duplicates.
+// Show exactly one row (and count) per rule so the report never lists the same
+// rule twice or double-counts its result.
+function dedupeComplianceResults(
+  rows: ComplianceResultWithRule[]
+): ComplianceResultWithRule[] {
+  const seen = new Set<string>();
+  const deduped: ComplianceResultWithRule[] = [];
+  for (const row of rows) {
+    const key = row.rule_code || row.rule_id;
+    if (!key) {
+      deduped.push(row);
+      continue;
+    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(row);
+  }
+  return deduped;
+}
+
 export function ReportView() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -68,7 +90,7 @@ export function ReportView() {
         : data.extracted_labels;
       setInspection(data);
       setLabel(normalizeExtractedLabel(rawLabel));
-      setResults(data.compliance_results || []);
+      setResults(dedupeComplianceResults(data.compliance_results || []));
       const images: InspectionImage[] = data.inspection_images || [];
       const frontImage = images.find((img) => img.image_type === 'label_front') || images[0] || null;
       const backImage = images.find((img) => img.image_type === 'label_back') || null;

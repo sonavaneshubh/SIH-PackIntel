@@ -98,12 +98,13 @@ export interface ViolationPattern {
 
 export interface EvidenceDetails {
   id: string;
+  inspectionId?: string;
   productName: string;
   attribute: string;
   detectedValue: string;
   conflictingValue?: string;
   conflictingSource?: string;
-  ocrConfidence: number;
+  ocrConfidence: number | null;
   applicableRule: string;
   ruleVersion: string;
   detectedIssue: string;
@@ -112,8 +113,8 @@ export interface EvidenceDetails {
   riskScore: number;
   riskLevel: RiskLevel;
   riskReasons: string[];
-  imageUrl: string;
-  boundingRegion: {
+  imageUrl: string | null;
+  boundingRegion?: {
     top: string;
     left: string;
     width: string;

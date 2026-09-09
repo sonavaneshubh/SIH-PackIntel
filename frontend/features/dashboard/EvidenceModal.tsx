@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { EvidenceDetails } from '@/types';
 import { RiskBadge, ConfidenceBadge, StatusBadge } from '@/components/ui/Badge';
@@ -10,18 +9,20 @@ import { Button } from '@/components/ui/Button';
 interface EvidenceModalProps {
   evidence: EvidenceDetails | null;
   isOpen: boolean;
+  isLoading?: boolean;
+  loadError?: string | null;
   onClose: () => void;
 }
 
-export function EvidenceModal({ evidence, isOpen, onClose }: EvidenceModalProps) {
+export function EvidenceModal({ evidence, isOpen, isLoading = false, loadError = null, onClose }: EvidenceModalProps) {
   const router = useRouter();
   const [activeSurface, setActiveSurface] = useState<'primary' | 'secondary'>('primary');
 
-  if (!isOpen || !evidence) return null;
+  if (!isOpen) return null;
 
-  const hasSecondary = Boolean(evidence.secondaryImageUrl);
+  const hasSecondary = Boolean(evidence?.secondaryImageUrl);
 
-  return (
+  const shell = (children: React.ReactNode) => (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 md:p-6 overflow-y-auto">
       {/* Backdrop */}
       <div
@@ -31,6 +32,43 @@ export function EvidenceModal({ evidence, isOpen, onClose }: EvidenceModalProps)
 
       {/* Modal Dialog */}
       <div className="relative w-full max-w-4xl bg-surface border border-outline-variant rounded-xl shadow-2xl overflow-hidden z-10 flex flex-col max-h-[92vh] my-auto animate-in fade-in zoom-in-95 duration-150">
+        {children}
+      </div>
+    </div>
+  );
+
+  if (isLoading || (!evidence && !loadError)) {
+    return shell(
+      <div className="flex flex-col items-center justify-center gap-3 p-12 text-center">
+        <span className="material-symbols-outlined text-[40px] text-primary animate-spin">progress_activity</span>
+        <p className="text-sm font-semibold text-on-surface">Loading inspection evidence…</p>
+        <p className="text-xs text-on-surface-variant">
+          Fetching scan image, extracted declarations, and compliance rulings.
+        </p>
+      </div>
+    );
+  }
+
+  if (!evidence) {
+    return shell(
+      <div className="flex flex-col items-center justify-center gap-3 p-12 text-center">
+        <span className="material-symbols-outlined text-[40px] text-error">error</span>
+        <p className="text-sm font-semibold text-on-surface">{loadError || 'Could not load inspection details.'}</p>
+        <Button variant="outline" size="sm" icon="close" onClick={onClose}>
+          Close
+        </Button>
+      </div>
+    );
+  }
+
+  const activeImageUrl =
+    activeSurface === 'primary' ? evidence.imageUrl : (evidence.secondaryImageUrl || evidence.imageUrl);
+  const activeRegion =
+    activeSurface === 'primary' ? evidence.boundingRegion : evidence.secondaryBoundingRegion;
+  const ocrText = evidence.ocrConfidence != null ? `OCR ${evidence.ocrConfidence}%` : null;
+
+  return shell(
+    <>
         {/* Modal Header */}
         <div className="flex items-start justify-between p-5 border-b border-outline-variant bg-surface-container-low">
           <div>
@@ -104,30 +142,44 @@ export function EvidenceModal({ evidence, isOpen, onClose }: EvidenceModalProps)
 
               <div className="relative rounded-lg border border-outline-variant bg-black/5 overflow-hidden h-[300px] flex items-center justify-center group shadow-inner">
                 {/* Package Image */}
-                <img
-                  src={activeSurface === 'primary' ? evidence.imageUrl : (evidence.secondaryImageUrl || evidence.imageUrl)}
-                  alt="Packaging Evidence Scan"
-                  className="w-full h-full object-cover"
-                />
+                {activeImageUrl ? (
+                  <img
+                    src={activeImageUrl}
+                    alt={`${evidence.productName} — packaging evidence scan`}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="flex flex-col items-center justify-center gap-2 text-on-surface-variant px-4">
+                    <span className="material-symbols-outlined text-[40px]">image_not_supported</span>
+                    <span className="text-xs font-label-bold">No scan image stored for this inspection</span>
+                  </div>
+                )}
 
-                {/* Simulated Bounding Region */}
-                <div
-                  className="absolute border-2 border-red-500 bg-red-500/25 rounded transition-all flex flex-col justify-start p-1 pointer-events-none animate-pulse"
-                  style={{
-                    top: activeSurface === 'primary' ? evidence.boundingRegion.top : (evidence.secondaryBoundingRegion?.top || '60%'),
-                    left: activeSurface === 'primary' ? evidence.boundingRegion.left : (evidence.secondaryBoundingRegion?.left || '20%'),
-                    width: activeSurface === 'primary' ? evidence.boundingRegion.width : (evidence.secondaryBoundingRegion?.width || '50%'),
-                    height: activeSurface === 'primary' ? evidence.boundingRegion.height : (evidence.secondaryBoundingRegion?.height || '20%'),
-                  }}
-                >
-                  <span className="bg-red-600 text-white text-[10px] font-mono font-bold px-1.5 py-0.5 rounded shadow-xs w-fit">
-                    {activeSurface === 'primary' ? evidence.boundingRegion.label : (evidence.secondaryBoundingRegion?.label || 'Mismatch Region')}
-                  </span>
-                </div>
+                {/* Detected Region (only when the OCR engine recorded one) */}
+                {activeRegion && (
+                  <div
+                    className="absolute border-2 border-red-500 bg-red-500/25 rounded transition-all flex flex-col justify-start p-1 pointer-events-none animate-pulse"
+                    style={{
+                      top: activeRegion.top,
+                      left: activeRegion.left,
+                      width: activeRegion.width,
+                      height: activeRegion.height,
+                    }}
+                  >
+                    <span className="bg-red-600 text-white text-[10px] font-mono font-bold px-1.5 py-0.5 rounded shadow-xs w-fit">
+                      {activeRegion.label}
+                    </span>
+                  </div>
+                )}
 
                 {/* Region coordinates overlay watermark */}
                 <div className="absolute bottom-2 left-2 bg-black/70 text-white text-[10px] font-mono px-2 py-0.5 rounded backdrop-blur-xs">
-                  BBox [{activeSurface === 'primary' ? `${evidence.boundingRegion.top}, ${evidence.boundingRegion.left}` : 'Alt Region'}] • OCR {evidence.ocrConfidence}%
+                  {activeRegion
+                    ? `BBox [${activeRegion.top}, ${activeRegion.left}]`
+                    : activeSurface === 'primary'
+                      ? 'Capture View'
+                      : 'Surface: BACK / SIDE'}
+                  {ocrText ? ` • ${ocrText}` : ''}
                 </div>
               </div>
             </div>
@@ -140,7 +192,11 @@ export function EvidenceModal({ evidence, isOpen, onClose }: EvidenceModalProps)
                   <span className="text-xs font-label-bold font-bold text-on-surface uppercase">
                     Extracted Declaration
                   </span>
-                  <ConfidenceBadge confidence={evidence.ocrConfidence} />
+                  {evidence.ocrConfidence != null ? (
+                      <ConfidenceBadge confidence={evidence.ocrConfidence} />
+                    ) : (
+                      <span className="text-[11px] font-label-bold text-on-surface-variant">Confidence: —</span>
+                    )}
                 </div>
 
                 <div>
@@ -248,14 +304,13 @@ export function EvidenceModal({ evidence, isOpen, onClose }: EvidenceModalProps)
               icon="description"
               onClick={() => {
                 onClose();
-                router.push('/results');
+                router.push(evidence.inspectionId ? `/results?inspection=${encodeURIComponent(evidence.inspectionId)}` : '/results');
               }}
             >
               Open Full Compliance Audit
             </Button>
           </div>
         </div>
-      </div>
-    </div>
+    </>
   );
 }
