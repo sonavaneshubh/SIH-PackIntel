@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass, field as dc_field
 from typing import Any, Dict, Optional, Tuple
 
@@ -715,24 +716,33 @@ class GeminiVisionService:
         )
 
         logger.info("GEMINI: extraction started (text=%d chars)", len(combined_text))
-        try:
-            with httpx.Client(timeout=settings.VISION_TIMEOUT_SECONDS) as http_client:
-                client = genai.Client(
-                    api_key=api_key,
-                    http_options=types.HttpOptions(httpx_client=http_client),
-                )
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=[user_content],
-                    config=types.GenerateContentConfig(
-                        system_instruction=_TEXT_EXTRACT_PROMPT,
-                        temperature=0,
-                        response_mime_type="application/json",
-                    ),
-                )
-        except Exception as exc:
-            logger.warning("GEMINI: request failed, using fallback: %s", exc)
-            return GeminiVisionResult(success=False, error=f"Gemini API error: {exc}")
+        last_error: Optional[Exception] = None
+        for attempt in range(1, 3):
+            try:
+                with httpx.Client(timeout=settings.VISION_TIMEOUT_SECONDS) as http_client:
+                    client = genai.Client(
+                        api_key=api_key,
+                        http_options=types.HttpOptions(httpx_client=http_client),
+                    )
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=[user_content],
+                        config=types.GenerateContentConfig(
+                            system_instruction=_TEXT_EXTRACT_PROMPT,
+                            temperature=0,
+                            response_mime_type="application/json",
+                        ),
+                    )
+                last_error = None
+                break
+            except Exception as exc:
+                last_error = exc
+                if not cls._is_transient_error(exc) or attempt == 2:
+                    break
+                time.sleep(1)
+        if last_error is not None:
+            logger.warning("GEMINI: request failed, using fallback: %s", last_error)
+            return GeminiVisionResult(success=False, error=f"Gemini API error: {last_error}")
 
         # ---- Parse response ----
         try:
@@ -769,6 +779,22 @@ class GeminiVisionService:
             image_quality="FAIR",
             readability_quality="MEDIUM",
         )
+
+    @staticmethod
+    def _is_transient_error(exc: Exception) -> bool:
+        """True for Google-side overload/auth-throttle errors a retry can fix."""
+        message = str(exc).lower()
+        markers = (
+            "503",
+            "429",
+            "unavailable",
+            "high demand",
+            "temporarily",
+            "quota",
+            "rate limit",
+            "resource exhausted",
+        )
+        return any(marker in message for marker in markers)
 
     @staticmethod
     def _fetch_image(image_ref: str) -> Image.Image:
