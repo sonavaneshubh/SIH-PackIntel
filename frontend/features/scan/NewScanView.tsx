@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowRight,
@@ -133,8 +133,6 @@ export function NewScanView() {
   const [showReview, setShowReview] = useState(false);
   const [scannerInstance, setScannerInstance] = useState(0);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const frontInputRef = useRef<HTMLInputElement>(null);
-  const backInputRef = useRef<HTMLInputElement>(null);
 
   const pipelineActive = state.step !== 'idle';
   const activeProcessingStep = getProcessingStepIndex(state.step);
@@ -410,8 +408,8 @@ export function NewScanView() {
                   backImage={backImage}
                   disabled={pipelineActive}
                   error={validationError}
-                  onFrontChoose={() => frontInputRef.current?.click()}
-                  onBackChoose={() => backInputRef.current?.click()}
+                  onFrontChange={handleFrontUpload}
+                  onBackChange={handleBackUpload}
                   onContinue={continueFromUpload}
                   onCancel={cancelUpload}
                 />
@@ -452,20 +450,6 @@ export function NewScanView() {
                     Having camera issues? Upload package images instead
                   </button>
                 )}
-                <input
-                  ref={frontInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="sr-only"
-                  onChange={handleFrontUpload}
-                />
-                <input
-                  ref={backInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="sr-only"
-                  onChange={handleBackUpload}
-                />
               </div>
             </section>
 
@@ -691,8 +675,8 @@ function UploadPanel({
   backImage,
   disabled,
   error,
-  onFrontChoose,
-  onBackChoose,
+  onFrontChange,
+  onBackChange,
   onContinue,
   onCancel,
 }: {
@@ -700,8 +684,8 @@ function UploadPanel({
   backImage: ProductSideImage | null;
   disabled: boolean;
   error: string | null;
-  onFrontChoose: () => void;
-  onBackChoose: () => void;
+  onFrontChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onBackChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onContinue: () => void;
   onCancel: () => void;
 }) {
@@ -724,13 +708,13 @@ function UploadPanel({
         <UploadSlot
           label="Front"
           image={frontImage}
-          onChoose={onFrontChoose}
+          onFileChange={onFrontChange}
           disabled={disabled}
         />
         <UploadSlot
           label="Back"
           image={backImage}
-          onChoose={onBackChoose}
+          onFileChange={onBackChange}
           disabled={disabled}
         />
       </div>
@@ -762,24 +746,31 @@ function UploadPanel({
 function UploadSlot({
   label,
   image,
-  onChoose,
+  onFileChange,
   disabled,
 }: {
   label: string;
   image: ProductSideImage | null;
-  onChoose: () => void;
+  onFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
   disabled: boolean;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onChoose}
-      disabled={disabled}
+    <label
+      aria-disabled={disabled}
       aria-label={image ? `Replace the ${label} image` : `Choose the ${label} image`}
-      className={`flex flex-col items-center justify-center rounded-lg border border-dashed p-4 text-center transition-colors disabled:opacity-50 ${
-        image ? 'border-[#00bfa5]/60 bg-[#e0f7f4]/40' : 'border-[#cbd5e1] bg-white hover:border-[#00bfa5]'
-      }`}
+      className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed p-4 text-center transition-colors ${
+        image
+          ? 'border-[#00bfa5]/60 bg-[#e0f7f4]/40'
+          : 'border-[#cbd5e1] bg-white hover:border-[#00bfa5]'
+      } ${disabled ? 'pointer-events-none opacity-50' : ''}`}
     >
+      <input
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="sr-only"
+        onChange={onFileChange}
+        disabled={disabled}
+      />
       {image ? (
         <>
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -803,7 +794,7 @@ function UploadSlot({
           <span className="mt-0.5 text-[10px] text-[#94a3b8]">Choose image</span>
         </>
       )}
-    </button>
+    </label>
   );
 }
 
