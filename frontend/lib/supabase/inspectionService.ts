@@ -21,6 +21,9 @@ import {
   HighPriorityInspectionRecord,
   InspectionPriority,
   PriorityDistribution,
+  AnalyticsData,
+  AnalyticsRuleStats,
+  AnalyticsTrendPoint,
 } from '@/types/database';
 
 // ─── Auth User (deduped) ──────────────────────────────────────────────────────
@@ -577,6 +580,215 @@ export async function getDashboardStats(): Promise<{
       nonCompliant,
       highPriority,
       avgRiskScore,
+    },
+    error: null,
+  };
+}
+
+// ─── Violation Analytics ──────────────────────────────────────────────────────
+// Computes every value the Violation Analytics page renders from the user's real
+// inspections + compliance_results + OCR confidence. No mock/placeholder data.
+
+export async function getAnalyticsData(): Promise<{
+  data: AnalyticsData | null;
+  error: string | null;
+}> {
+  const {
+    data: { user },
+    error: authError,
+  } = await getAuthUser();
+
+  if (authError || !user) {
+    return { data: null, error: 'Not authenticated.' };
+  }
+
+  // Joined query: inspections + their compliance results + OCR confidence from
+  // both the label record and the stored inspection images.
+  const { data, error } = await supabase
+    .from('inspections')
+    .select(`
+      id,
+      status,
+      overall_result,
+      risk_score,
+      compliance_score,
+      created_at,
+      extracted_labels (ocr_confidence),
+      inspection_images (ocr_confidence)
+    `)
+    .eq('inspector_id', user.id)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    logSupabaseError('getAnalyticsData', error);
+    return {
+      data: null,
+      error: `Failed to load analytics data: ${supabaseErrorDetail(error)}`,
+    };
+  }
+
+  const rows = data || [];
+
+  const completed = rows.filter((r) => r.status === 'completed');
+  const processingCount = rows.filter((r) => r.status === 'processing').length;
+  const failedCount = rows.filter((r) => r.status === 'failed').length;
+  const passCount = completed.filter((r) => r.overall_result === 'pass').length;
+  const reviewCount = completed.filter((r) => r.overall_result === 'review').length;
+  const failCount = completed.filter((r) => r.overall_result === 'fail').length;
+
+  const passRate = completed.length > 0
+    ? Math.round((passCount / completed.length) * 1000) / 10
+    : 0;
+
+  const mean = (values: number[]): number | null => {
+    if (!values.length) return null;
+    const total = values.reduce((a, b) => a + b, 0);
+    return Math.round((total / values.length) * 10) / 10;
+  };
+
+  // Real OCR confidence: prefer extracted_labels.ocr_confidence, else the best
+  // of that inspection's image confidences.
+  const ocrConfidences: number[] = [];
+  for (const row of rows) {
+    const labels = Array.isArray(row.extracted_labels)
+      ? row.extracted_labels
+      : row.extracted_labels
+        ? [row.extracted_labels]
+        : [];
+    const labelConf = labels[0]?.ocr_confidence;
+    const imageConfidences = Array.isArray(row.inspection_images)
+      ? (row.inspection_images as Array<{ ocr_confidence: number | null }>)
+          .map((img) => img.ocr_confidence)
+          .filter((c): c is number => c != null)
+      : [];
+    if (labelConf != null) ocrConfidences.push(Number(labelConf));
+    else if (imageConfidences.length) ocrConfidences.push(Math.max(...imageConfidences));
+  }
+
+  const complianceScores = completed
+    .map((r) => r.compliance_score)
+    .filter((s): s is number => s != null);
+  const riskScores = completed
+    .map((r) => r.risk_score)
+    .filter((s): s is number => s != null);
+
+  // ── Rule-level violation distribution ─────────────────────────────────────
+  // compliance_results is not part of the joined select because it would need a
+  // separate expanded join; we fetch it once for the user's inspections instead.
+
+  const completedIds = completed.map((r) => r.id);
+  const ruleMap = new Map<
+    string,
+    {
+      rule_code: string;
+      rule_name: string;
+      pass: number;
+      fail: number;
+      warning: number;
+      not_applicable: number;
+      total_checked: number;
+    }
+  >();
+
+  if (completedIds.length) {
+    // Batch in chunks to stay within URL-length limits for the `in` filter.
+    const CHUNK = 200;
+    for (let i = 0; i < completedIds.length; i += CHUNK) {
+      const ids = completedIds.slice(i, i + CHUNK);
+      const { data: compResults, error: compError } = await supabase
+        .from('compliance_results')
+        .select('inspection_id, rule_code, rule_name, result')
+        .in('inspection_id', ids);
+
+      if (compError) {
+        logSupabaseError('getAnalyticsData:compliance', compError);
+        return {
+          data: null,
+          error: `Failed to load compliance results: ${supabaseErrorDetail(compError)}`,
+        };
+      }
+
+      // Dedupe inspection_id => unique rule per inspection (one row per
+      // rule_code per inspection is stored, but guard against legacy rows).
+      const seen = new Set<string>();
+      for (const r of compResults || []) {
+        const key = `${r.inspection_id}|${r.rule_code}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        let stats = ruleMap.get(r.rule_code);
+        if (!stats) {
+          stats = {
+            rule_code: r.rule_code,
+            rule_name: r.rule_name,
+            pass: 0,
+            fail: 0,
+            warning: 0,
+            not_applicable: 0,
+            total_checked: 0,
+          };
+          ruleMap.set(r.rule_code, stats);
+        }
+        stats.total_checked += 1;
+        if (r.result === 'pass') stats.pass += 1;
+        else if (r.result === 'fail') stats.fail += 1;
+        else if (r.result === 'warning') stats.warning += 1;
+        else if (r.result === 'not_applicable') stats.not_applicable += 1;
+      }
+    }
+  }
+
+  const totalViolations = [...ruleMap.values()].reduce(
+    (sum, r) => sum + r.fail + r.warning,
+    0
+  );
+
+  const ruleDistribution: AnalyticsRuleStats[] = [...ruleMap.values()]
+    .map((r) => ({
+      ...r,
+      violations: r.fail + r.warning,
+      violation_pct:
+        totalViolations > 0
+          ? Math.round(((r.fail + r.warning) / totalViolations) * 1000) / 10
+          : 0,
+    }))
+    .sort((a, b) => b.violations - a.violations || b.fail - a.fail);
+
+  const topViolatedRule = ruleDistribution[0] ?? null;
+
+  // ── Daily trend (last 14 days) ─────────────────────────────────────────────
+  const trendMap = new Map<string, AnalyticsTrendPoint>();
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    trendMap.set(key, { date: key, pass: 0, review: 0, fail: 0 });
+  }
+  for (const row of completed) {
+    const key = (row.created_at || '').slice(0, 10);
+    const point = trendMap.get(key);
+    if (!point) continue;
+    if (row.overall_result === 'pass') point.pass += 1;
+    else if (row.overall_result === 'review') point.review += 1;
+    else if (row.overall_result === 'fail') point.fail += 1;
+  }
+
+  return {
+    data: {
+      total_inspections: rows.length,
+      completed_inspections: completed.length,
+      processing_count: processingCount,
+      failed_count: failedCount,
+      pass_count: passCount,
+      review_count: reviewCount,
+      fail_count: failCount,
+      pass_rate: passRate,
+      avg_ocr_accuracy: mean(ocrConfidences),
+      avg_compliance_score: mean(complianceScores),
+      avg_risk_score: mean(riskScores),
+      top_violated_rule: topViolatedRule,
+      rule_distribution: ruleDistribution,
+      trend: [...trendMap.values()],
     },
     error: null,
   };

@@ -9,6 +9,7 @@ import {
   InspectionImage,
   InspectionReport,
   DashboardStats,
+  AnalyticsData,
 } from '@/types/database';
 import {
   createInspection,
@@ -16,6 +17,7 @@ import {
   getInspectionById,
   getMyInspections,
   getDashboardStats,
+  getAnalyticsData,
   saveExtractedLabel,
   saveComplianceResults,
   uploadInspectionImage,
@@ -62,6 +64,40 @@ export function useDashboardStats() {
   }, [fetchStats, user]);
 
   return { stats, isLoading, error, refetch: fetchStats };
+}
+
+// ─── Analytics Hook ────────────────────────────────────────────────────────────
+export function useAnalytics() {
+  const { user } = useAuth();
+  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchAnalytics = useCallback(async () => {
+    if (!user) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const { data, error: fetchError } = await getAnalyticsData();
+      if (fetchError) {
+        setError(fetchError);
+      } else {
+        setAnalytics(data);
+      }
+    } catch (err) {
+      setError('Failed to load violation analytics');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (user) {
+      fetchAnalytics();
+    }
+  }, [fetchAnalytics, user]);
+
+  return { analytics, isLoading, error, refetch: fetchAnalytics };
 }
 
 // ─── Inspections List Hook ─────────────────────────────────────────────────────

@@ -121,6 +121,12 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Admins may access the full inspector workspace (matching the demo account,
+  // whose platformRole is 'admin'). Only unknown/other roles are denied.
+  if (role === 'admin') {
+    return NextResponse.next();
+  }
+
   if (role !== 'inspector') {
     const url = request.nextUrl.clone();
     url.pathname = '/access-denied';

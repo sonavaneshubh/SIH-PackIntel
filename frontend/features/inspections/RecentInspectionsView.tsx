@@ -149,9 +149,7 @@ export function RecentInspectionsView() {
               <span className="material-symbols-outlined text-[14px]">fact_check</span>
               {count} Total Inspections
             </span>
-            <Button variant="primary" size="sm" icon="add_scan" onClick={() => router.push('/scan/new')}>
-              New Scan
-            </Button>
+            
           </>
         }
       />

@@ -245,3 +245,45 @@ export interface DashboardStats {
   highPriority: number;
   avgRiskScore: number;
 }
+
+// ─── Violation Analytics ─────────────────────────────────────────────────────
+// Aggregate view-model for the Violation Analytics page, computed from the
+// user's REAL inspections, compliance_results and OCR confidence artifacts.
+
+export interface AnalyticsRuleStats {
+  rule_code: string;
+  rule_name: string;
+  pass: number;
+  fail: number;
+  warning: number;
+  not_applicable: number;
+  // fail + warning summed across the user's completed inspections
+  violations: number;
+  total_checked: number;
+  // Share of this rule's violations among ALL violations (0-100, 1 decimal)
+  violation_pct: number;
+}
+
+export interface AnalyticsTrendPoint {
+  date: string; // YYYY-MM-DD
+  pass: number;
+  review: number;
+  fail: number;
+}
+
+export interface AnalyticsData {
+  total_inspections: number;
+  completed_inspections: number;
+  processing_count: number;
+  failed_count: number;
+  pass_count: number;
+  review_count: number;
+  fail_count: number;
+  pass_rate: number; // completed pass / completed, 0-100
+  avg_ocr_accuracy: number | null; // mean real OCR confidence 0-100
+  avg_compliance_score: number | null;
+  avg_risk_score: number | null;
+  top_violated_rule: AnalyticsRuleStats | null;
+  rule_distribution: AnalyticsRuleStats[];
+  trend: AnalyticsTrendPoint[];
+}
