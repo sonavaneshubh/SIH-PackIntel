@@ -1,6 +1,7 @@
 import json
 import logging
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
@@ -125,46 +126,25 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
     gemini_text_used = False
     gemini_product_fields: Optional[Dict[str, ProductField]] = None
 
-    for index, side in enumerate(sides):
-        label = side["label"]
-        pil_image = side.get("pil_image")
+    # Detection/quality/OCR for multiple sides is CPU- and I/O-bound, so the
+    # sides are processed in parallel. Outcomes keep the input ordering and the
+    # first side always supplies the "front" response fields (same contract as
+    # a sequential loop).
+    with ThreadPoolExecutor(max_workers=max(1, len(sides))) as pool:
+        processed = list(pool.map(_process_one_side, sides))
 
-        detection, quality = _detect_and_qualify(side, warnings)
-
-        # The decoded PIL copy is only needed for the detection/quality stage.
-        # Drop it before OCR so the worker is not holding a full pixel buffer
-        # (plus a second decode inside the OCR engine) for the rest of the scan.
-        if "pil_image" in side:
-            pil_image = None
-            del side["pil_image"]
-
-        ocr_result = _run_ocr(side["image_ref"])
+    warnings.extend(
+        warning
+        for outcome in processed
+        for warning in outcome["warnings"]
+    )
+    for index, outcome in enumerate(processed):
+        per_side.append(outcome["scan_side"])
         if index == 0:
-            front_result = ocr_result
-            front_detection = detection
-
-        ocr_text = str(ocr_result.get("raw_text") or ocr_result.get("text") or "").strip()
-        layout_text = str(ocr_result.get("layout_text") or "").strip()
-        if index == 0:
-            front_ocr_text = ocr_text
-            front_layout_text = layout_text
-
-        quality = _merge_quality(quality, ocr_result, label, warnings)
-
-        per_side.append(
-            ScanSide(
-                label=label,
-                source=side.get("source"),
-                ocr_raw_text=ocr_text,
-                ocr_engine=ocr_result.get("engine") or "ocr_space",
-                ocr_confidence=float(ocr_result.get("confidence") or 0.0),
-                ocr_regions=ocr_result.get("regions") or [],
-                layout_regions=ocr_result.get("layout_regions") or [],
-                layout_text=layout_text or None,
-                image_quality=quality,
-                detection=detection,
-            )
-        )
+            front_result = outcome["ocr_result"]
+            front_ocr_text = outcome["ocr_text"]
+            front_layout_text = outcome["layout_text"]
+            front_detection = outcome["detection"]
 
     # ---- Combine OCR text from every side (front then back), plus layout ----
     extraction_text = _combine_ocr_text(front_ocr_text, front_layout_text)
@@ -574,6 +554,52 @@ def _detect_and_qualify(side: dict, warnings: List[str]):
         warnings.append(f"Food-package detection failed for '{label}'.")
 
     return detection, quality
+
+
+def _process_one_side(side: dict) -> Dict[str, Any]:
+    """Run detection, quality and OCR for one side.
+
+    Worker for the parallel side loop. Returns everything create_scan needs to
+    assemble the response, including the warnings raised while handling this
+    side so ordering of the final warnings list stays deterministic.
+    """
+    label = side["label"]
+    side_warnings: List[str] = []
+    detection, quality = _detect_and_qualify(side, side_warnings)
+
+    # The decoded PIL copy is only needed for the detection/quality stage.
+    # Drop it before OCR so the worker is not holding a full pixel buffer
+    # (plus a second decode inside the OCR engine) for the rest of the scan.
+    if "pil_image" in side:
+        del side["pil_image"]
+
+    ocr_result = _run_ocr(side["image_ref"])
+    quality = _merge_quality(quality, ocr_result, label, side_warnings)
+    ocr_text = str(ocr_result.get("raw_text") or ocr_result.get("text") or "").strip()
+    layout_text = str(ocr_result.get("layout_text") or "").strip()
+
+    scan_side = ScanSide(
+        label=label,
+        source=side.get("source"),
+        ocr_raw_text=ocr_text,
+        ocr_engine=ocr_result.get("engine") or "ocr_space",
+        ocr_confidence=float(ocr_result.get("confidence") or 0.0),
+        ocr_regions=ocr_result.get("regions") or [],
+        layout_regions=ocr_result.get("layout_regions") or [],
+        layout_text=layout_text or None,
+        image_quality=quality,
+        detection=detection,
+    )
+
+    return {
+        "label": label,
+        "detection": detection,
+        "ocr_result": ocr_result,
+        "ocr_text": ocr_text,
+        "layout_text": layout_text,
+        "scan_side": scan_side,
+        "warnings": side_warnings,
+    }
 
 
 def _run_ocr(image_ref: str) -> Dict[str, Any]:

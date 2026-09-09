@@ -8,11 +8,16 @@ columns cannot bleed into one combined reading order.
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from PIL import Image, ImageEnhance, ImageOps
+
+from app.core.config import settings
 
 try:
     import cv2
@@ -217,6 +222,42 @@ def _label_from_text(text: str, fallback: str) -> str:
     return fallback
 
 
+def _resolve_tesseract_cmd() -> Optional[str]:
+    """Resolve the Tesseract executable without importing the OCR service.
+
+    Mirrors the resolution used by the full-image OCR so both layers agree on
+    the same binary (env var, PATH, or the Windows default install path).
+    """
+    configured = (os.getenv("TESSERACT_CMD", "").strip()
+                  or getattr(settings, "TESSERACT_CMD", "").strip())
+    if configured:
+        return shutil.which(configured) or (
+            configured if os.path.isfile(configured) else None
+        )
+    command = shutil.which("tesseract")
+    if command:
+        return command
+    if os.name == "nt":
+        for candidate in (
+            os.path.join(os.environ.get("ProgramFiles", ""), "Tesseract-OCR", "tesseract.exe"),
+            os.path.join(os.environ.get("ProgramFiles(x86)", ""), "Tesseract-OCR", "tesseract.exe"),
+        ):
+            if os.path.isfile(candidate):
+                return candidate
+    return None
+
+
+def _ocr_region(pil_image: Image.Image, roi: ROI, extract, vision_fallback) -> Dict[str, Any]:
+    """OCR one ROI and attach the resulting label (plus optional vision data)."""
+    crop = pil_image.crop((roi.x, roi.y, roi.x + roi.width, roi.y + roi.height))
+    text = (extract(crop) or "").strip()
+    label = _label_from_text(text, roi.label)
+    item: Dict[str, Any] = {**roi.as_dict(), "label": label, "text": text}
+    if vision_fallback and not text:
+        item["vision"] = vision_fallback(crop, item)
+    return item
+
+
 def extract_layout_ocr(
     image: Any,
     ocr_function: Optional[Callable[[Image.Image], str]] = None,
@@ -225,22 +266,30 @@ def extract_layout_ocr(
     """Segment an image, OCR every ROI independently, and return structured text.
 
     ``ocr_function`` receives one PIL crop at a time. If omitted, PyTesseract
-    uses a single-block mode suited to isolated regions. ``vision_fallback`` is
-    an extension point for a multimodal provider; it receives the crop and ROI
+    uses a single-block mode suited to isolated regions and runs each ROI in a
+    small thread pool because the subprocess is the dominant cost. A custom
+    callback runs sequentially so interactions are deterministic. ``vision_fallback``
+    is an extension point for a multimodal provider; it receives the crop and ROI
     metadata and should return a JSON-compatible dictionary.
     """
     pil_image = _as_pil(image)
     rois = detect_rois(pil_image)
+    if ocr_function is None and pytesseract is not None:
+        command = _resolve_tesseract_cmd()
+        if command:
+            pytesseract.pytesseract.tesseract_cmd = command
     extract = ocr_function or _default_ocr
-    regions: List[Dict[str, Any]] = []
-    for roi in rois:
-        crop = pil_image.crop((roi.x, roi.y, roi.x + roi.width, roi.y + roi.height))
-        text = (extract(crop) or "").strip()
-        label = _label_from_text(text, roi.label)
-        item: Dict[str, Any] = {**roi.as_dict(), "label": label, "text": text}
-        if vision_fallback and not text:
-            item["vision"] = vision_fallback(crop, item)
-        regions.append(item)
+
+    if ocr_function is None and len(rois) > 1:
+        workers = min(4, len(rois))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            regions = list(pool.map(
+                lambda roi: _ocr_region(pil_image, roi, extract, vision_fallback),
+                rois,
+            ))
+    else:
+        regions = [_ocr_region(pil_image, roi, extract, vision_fallback) for roi in rois]
+
     return {
         "regions": regions,
         "text": "\n\n".join(region["text"] for region in regions if region["text"]),

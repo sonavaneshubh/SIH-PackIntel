@@ -8,6 +8,7 @@ The Rules Database is the single source of truth for:
 """
 
 from typing import Any, Dict, List, Optional
+import time
 from pydantic import BaseModel
 from app.core.config import settings
 
@@ -311,9 +312,27 @@ CODIFIED_RULES: List[CodifiedRule] = [
 
 
 class RulesService:
+    _RULES_CACHE: Optional[tuple] = None
+    _RULES_CACHE_TTL_SECONDS = 300.0
+
     @classmethod
     def get_active_rules(cls) -> List[CodifiedRule]:
-        """Fetch active rules from database or fallback to the built-in codified registry."""
+        """Fetch active rules from database or fallback to the built-in codified registry.
+
+        The database result is cached for a short TTL so the scan pipeline does
+        not pay a network round-trip on every compliance evaluation.
+        """
+        now = time.monotonic()
+        if cls._RULES_CACHE is not None:
+            cached_at, cached = cls._RULES_CACHE
+            if (now - cached_at) < cls._RULES_CACHE_TTL_SECONDS:
+                return cached
+        rules = cls._fetch_active_rules()
+        cls._RULES_CACHE = (now, rules)
+        return rules
+
+    @classmethod
+    def _fetch_active_rules(cls) -> List[CodifiedRule]:
         if HAS_SUPABASE and settings.SUPABASE_SERVICE_ROLE_KEY and settings.clean_supabase_url:
             try:
                 client = create_client(settings.clean_supabase_url, settings.SUPABASE_SERVICE_ROLE_KEY)

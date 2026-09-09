@@ -28,6 +28,10 @@ _VISION_TIMEOUT_SECONDS = max(1, int(getattr(settings, "OCR_TIMEOUT_SECONDS", 60
 
 _PSMOS = (3, 6, 11)
 
+_VISION_CLIENT_CACHE: Optional["vision.ImageAnnotatorClient"] = None
+_GOOGLE_VISION_PERMANENT_ERROR: Optional[str] = None
+_TESSERACT_STRONG_SCORE = 10.0
+
 
 def _resolve_tesseract_command() -> str | None:
     """Resolve an optional configured command or the platform PATH entry."""
@@ -313,17 +317,49 @@ class OCRService:
 
     @staticmethod
     def _vision_client() -> Optional["vision.ImageAnnotatorClient"]:
-        """Return a Google Cloud Vision client using the configured credentials."""
+        """Return a cached Google Cloud Vision client using the configured credentials."""
+        global _VISION_CLIENT_CACHE
+        if _VISION_CLIENT_CACHE is not None:
+            return _VISION_CLIENT_CACHE
         if not HAS_GOOGLE_VISION:
             return None
         credentials = OCRService._google_vision_credentials()
         try:
             if credentials is not None:
-                return vision.ImageAnnotatorClient(credentials=credentials)
-            return vision.ImageAnnotatorClient()
+                _VISION_CLIENT_CACHE = vision.ImageAnnotatorClient(credentials=credentials)
+            else:
+                _VISION_CLIENT_CACHE = vision.ImageAnnotatorClient()
+            return _VISION_CLIENT_CACHE
         except Exception as err:
             logger.warning("OCR: Could not initialize Google Vision client: %s", err)
             return None
+
+    @staticmethod
+    def _is_permanent_vision_error(exc: Exception) -> bool:
+        """Detect credential/billing problems that a retry cannot fix."""
+        message = str(exc).lower()
+        markers = (
+            "billing",
+            "permission",
+            "403",
+            "api key",
+            "api_key",
+            "not enabled",
+            "not configured",
+            "account disabled",
+        )
+        return any(marker in message for marker in markers)
+
+    @staticmethod
+    def _record_permanent_vision_error(exc: Exception) -> None:
+        """Remember a non-recoverable Vision error and skip future attempts."""
+        global _GOOGLE_VISION_PERMANENT_ERROR
+        first_line = (str(exc) or "unknown error").strip().splitlines()[0]
+        _GOOGLE_VISION_PERMANENT_ERROR = (
+            f"Google Cloud Vision is unavailable: {first_line[:200]} "
+            "(Vision is skipped until the backend process is restarted)."
+        )
+        logger.error("OCR: %s", _GOOGLE_VISION_PERMANENT_ERROR)
 
     @classmethod
     def _run_google_vision(cls, image: Image.Image) -> tuple[str, float]:
@@ -333,6 +369,8 @@ class OCRService:
         """
         if not HAS_GOOGLE_VISION:
             raise RuntimeError("google-cloud-vision is not installed")
+        if _GOOGLE_VISION_PERMANENT_ERROR:
+            raise RuntimeError(_GOOGLE_VISION_PERMANENT_ERROR)
         client = cls._vision_client()
         if client is None:
             raise RuntimeError("Google Cloud Vision client could not be initialized")
@@ -351,7 +389,10 @@ class OCRService:
                     {"image": vision_image, "features": features},
                     timeout=_VISION_TIMEOUT_SECONDS,
                 )
-            except Exception:
+            except Exception as exc:
+                if cls._is_permanent_vision_error(exc):
+                    cls._record_permanent_vision_error(exc)
+                    raise RuntimeError(_GOOGLE_VISION_PERMANENT_ERROR) from exc
                 # Some product labels work better with the generic text detector.
                 response = client.annotate_image(
                     {
@@ -363,6 +404,9 @@ class OCRService:
                     timeout=_VISION_TIMEOUT_SECONDS,
                 )
         except Exception as exc:
+            if _GOOGLE_VISION_PERMANENT_ERROR is None and cls._is_permanent_vision_error(exc):
+                cls._record_permanent_vision_error(exc)
+                raise RuntimeError(_GOOGLE_VISION_PERMANENT_ERROR) from exc
             raise RuntimeError(f"Google Cloud Vision request failed: {exc}") from exc
 
         if response.error and response.error.message:
@@ -406,13 +450,23 @@ class OCRService:
         candidates = []
         ocr_warning = None
         for variant in variants:
+            strong_found = False
             for psm in _PSMOS:
                 try:
                     text = cls._run_tesseract_string(variant, psm).strip()
                     if cls._meaningful_text(text):
                         candidates.append((text, variant, psm))
+                        # A rich, self-contained pass is good enough: stop
+                        # spawning more tesseract subprocesses once one strong
+                        # candidate exists. Sparse/noisy labels still get the
+                        # full PSM sweep.
+                        if cls._score_candidate(text) >= _TESSERACT_STRONG_SCORE:
+                            strong_found = True
+                            break
                 except (pytesseract.TesseractError, OSError) as err:
                     ocr_warning = str(err)
+            if strong_found:
+                break
 
         if not candidates:
             raise RuntimeError(ocr_warning or "Tesseract returned no readable text.")
