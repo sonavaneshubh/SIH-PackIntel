@@ -51,4 +51,6 @@ desktop.ini
 *.tmp
 ~$*
 
-backend/packintel-507817-365168663b05.json
+# backend/packintel-*.json service account keys are needed on Render for
+# Google Cloud Vision OCR.  Do NOT gitignore these files when deploying.
+# If you must exclude a key locally, use .git/info/exclude instead.

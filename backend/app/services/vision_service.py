@@ -336,7 +336,7 @@ class GeminiProvider(VisionProvider):
 
     @property
     def _model_name(self) -> str:
-        return (settings.VISION_MODEL or "gemini-3.6-flash").strip()
+        return (settings.VISION_MODEL or "gemini-2.5-flash").strip()
 
     def is_configured(self) -> bool:
         return HAS_GENAI and bool(self._api_key and self._model_name)

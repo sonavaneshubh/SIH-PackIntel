@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     OPENAI_API_URL: str = "https://api.openai.com/v1/chat/completions"
     VISION_API_KEY: str = ""
-    VISION_MODEL: str = "gemini-3.6-flash"
+    VISION_MODEL: str = "gemini-2.5-flash"
     VISION_TIMEOUT_SECONDS: int = 30
 
     # Master switch for multimodal (Gemini) vision fallback in the scan

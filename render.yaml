@@ -20,3 +20,34 @@ services:
       # in sync with the bucket the frontend uses to upload reports.
       - key: REPORT_STORAGE_BUCKET
         sync: false
+      # ── OCR / Vision configuration ──────────────────────────────────────────
+      # Gemini multimodal vision extraction (primary structured extractor).
+      # Set GEMINI_API_KEY to a valid Google AI Studio / Vertex AI key.
+      - key: VISION_PROVIDER
+        value: gemini
+      - key: VISION_MODEL
+        value: gemini-2.5-flash
+      - key: GEMINI_API_KEY
+        sync: false
+      # Enable Gemini as the primary extraction engine (extracts structured
+      # fields directly from OCR text). Set to "true" once GEMINI_API_KEY is
+      # configured so the pipeline uses Gemini instead of regex extraction.
+      - key: GEMINI_PRIMARY_ENABLED
+        value: "true"
+      # Optional: re-arm the Gemini image-vision fallback for low-confidence OCR.
+      - key: ENABLE_VISION_FALLBACK
+        value: "true"
+      - key: VISION_TIMEOUT_SECONDS
+        value: "30"
+      # Google Cloud Vision OCR (primary OCR engine). Requires the service
+      # account JSON to be committed (backend/packintel-*.json) OR set
+      # GOOGLE_APPLICATION_CREDENTIALS to the path of the key on the server.
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        sync: false
+      # Optional third-party OCR fallback (set key to enable OCR.Space).
+      - key: OCR_SPACE_API_KEY
+        sync: false
+      - key: OCR_TIMEOUT_SECONDS
+        value: "60"
+      # Tesseract is installed via buildCommand; no TESSERACT_CMD needed on
+      # Linux/Render (it is on the system PATH after apt-get install).

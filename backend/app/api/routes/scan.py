@@ -65,15 +65,29 @@ async def scan_status(current_user: dict = Depends(get_current_user)):
     The frontend uses this to decide whether the two-image scanner path is
     available. API keys are never reflected here.
     """
-    from app.services.ocr_service import get_google_vision_diagnostics
+    from app.services.ocr_service import (
+        get_google_vision_diagnostics,
+        get_tesseract_diagnostics,
+    )
+    from app.services.gemini_vision import GeminiVisionService
 
     vision_status = get_google_vision_diagnostics()
+    tesseract_status = get_tesseract_diagnostics()
+    gemini_configured = GeminiVisionService.is_configured()
+
+    # The scanner is usable when at least one OCR engine is available.
+    ocr_ready = vision_status["available"] or tesseract_status["available"]
 
     return {
-        "status": "ready",
+        "status": "ready" if ocr_ready else "degraded",
         "pipeline": "detection -> quality -> preprocessing -> ocr -> extraction -> compliance",
-        "ocr_engine": "google_vision",
-        "ocr_configured": vision_status["available"],
+        "ocr_configured": ocr_ready,
+        "ocr_engines": {
+            "google_vision": vision_status["available"],
+            "tesseract": tesseract_status["available"],
+        },
+        "primary_ocr": "google_vision" if vision_status["available"] else "tesseract",
+        "vision_configured": gemini_configured,
         "multi_image": True,
         "food_package_confidence_threshold": settings.FOOD_PACKAGE_CONFIDENCE_THRESHOLD,
         "max_image_size_mb": settings.MAX_IMAGE_SIZE_MB,
