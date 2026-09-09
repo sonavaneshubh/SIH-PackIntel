@@ -30,25 +30,6 @@ function asNullableString(value: unknown): string | null {
   return typeof value === 'string' ? value : String(value);
 }
 
-// Converts the backend's base64 evidence-crop data URI into a File so it can
-// be persisted in Supabase Storage as an `evidence_crop` inspection image.
-function base64DataUriToFile(dataUri: string, filename: string, mime: string): File | null {
-  try {
-    const [header, base64] = dataUri.split(',');
-    if (!base64) return null;
-    const mimeMatch = /^data:([a-z0-9\-+/.]+\/[a-z0-9\-+.]+);base64/i.exec(header || '');
-    const resolvedMime = mimeMatch ? mimeMatch[1] : mime;
-    const byteString = atob(base64);
-    const bytes = new Uint8Array(byteString.length);
-    for (let i = 0; i < byteString.length; i += 1) {
-      bytes[i] = byteString.charCodeAt(i);
-    }
-    return new File([bytes], filename, { type: resolvedMime });
-  } catch {
-    return null;
-  }
-}
-
 export interface ScanErrorInfo {
   friendly: string;
   code?: string;
@@ -155,8 +136,6 @@ export interface ScanPipelineState {
   inspection: Inspection | null;
   image: InspectionImage | null;
   backImage: InspectionImage | null;
-  evidenceCrop: InspectionImage | null;
-  evidenceCropMeta: { strategy?: string; confidence?: number } | null;
   ocrText: string | null;
   extractedLabels: ExtractedLabelInsert | null;
   complianceResults: ComplianceResultInsert[] | null;
@@ -177,8 +156,6 @@ export function useScanPipeline() {
     inspection: null,
     image: null,
     backImage: null,
-    evidenceCrop: null,
-    evidenceCropMeta: null,
     ocrText: null,
     extractedLabels: null,
     complianceResults: null,
@@ -405,35 +382,6 @@ export function useScanPipeline() {
         }
       }
 
-      // Step 4c: Persist the backend auto-crop of the declaration / label area.
-      // A crop failure is non-fatal — the original front image still displays.
-      let evidenceCrop: InspectionImage | null = null;
-      if (ocrData.evidence_crop_base64) {
-        const cropFile = base64DataUriToFile(
-          ocrData.evidence_crop_base64,
-          'evidence-crop.jpg',
-          'image/jpeg',
-        );
-        if (cropFile) {
-          const { data: cropUpload, error: cropError } = await uploadInspectionImage(
-            inspection.id,
-            cropFile,
-            'evidence_crop',
-          );
-          if (cropError) {
-            logSupabaseError('useScanPipeline:uploadEvidenceCrop', cropError);
-          } else if (cropUpload) {
-            evidenceCrop = cropUpload;
-          }
-        }
-      }
-      updateState({
-        evidenceCrop,
-        evidenceCropMeta: ocrData.evidence_crop_meta
-          ? { strategy: ocrData.evidence_crop_meta.strategy, confidence: ocrData.evidence_crop_meta.confidence }
-          : null,
-      });
-
       // Step 5: Save extracted labels (from OCR text only, never request metadata)
       const labelData: ExtractedLabelInsert = {
         inspection_id: inspection.id,
@@ -559,8 +507,6 @@ export function useScanPipeline() {
       inspection: null,
       image: null,
       backImage: null,
-      evidenceCrop: null,
-      evidenceCropMeta: null,
       ocrText: null,
       extractedLabels: null,
       complianceResults: null,

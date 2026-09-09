@@ -94,10 +94,6 @@ class ScanResponse(BaseModel):
     detection: Optional[ImageDetection] = None
     warnings: List[str] = []
 
-    # ---- Auto-crop evidence (declaration / label area) ----
-    evidence_crop_base64: Optional[str] = None
-    evidence_crop_meta: Optional[Dict[str, Any]] = None
-
 
 class InspectionCreate(BaseModel):
     product_name: str
