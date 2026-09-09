@@ -399,6 +399,7 @@ export function NewScanView() {
                   onSideCaptured={handleSideCaptured}
                   onCameraStateChange={handleCameraStateChange}
                   onUploadRequest={openUploadFlow}
+                  onExitScanner={() => router.push('/dashboard')}
                 />
               )}
 

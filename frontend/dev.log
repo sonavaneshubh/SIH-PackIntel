@@ -1,0 +1,235 @@
+
+> packintel@0.1.0 dev
+> next dev
+
+   ▲ Next.js 15.5.23
+   - Local:        http://localhost:3000
+   - Network:      http://10.55.162.30:3000
+   - Environments: .env.local
+   - Experiments (use with caution):
+     · optimizePackageImports
+
+ ✓ Starting...
+ ✓ Ready in 3.7s
+ ○ Compiling / ...
+ ✓ Compiled / in 2.8s (738 modules)
+ GET / 200 in 3412ms
+ ✓ Compiled in 750ms (296 modules)
+ GET / 200 in 384ms
+ ○ Compiling /login ...
+ ✓ Compiled /login in 516ms (459 modules)
+ ✓ Compiled in 520ms (285 modules)
+ GET /icon.svg?ab7577bf9d99e304 200 in 1724ms
+ GET /login 200 in 1562ms
+ GET / 200 in 739ms
+ ○ Compiling /_not-found ...
+ ✓ Compiled /_not-found in 1140ms (756 modules)
+ GET /high-priority-inspections 404 in 1343ms
+ GET /high-priority-inspections 404 in 317ms
+ GET / 200 in 679ms
+ ○ Compiling /middleware ...
+ ✓ Compiled /middleware in 1323ms (115 modules)
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 1427ms (788 modules)
+ GET /dashboard 200 in 1659ms
+ ○ Compiling /scan/new ...
+ ✓ Compiled /scan/new in 1997ms (864 modules)
+ GET /scan/new 200 in 2187ms
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ✓ Compiled in 3.5s (971 modules)
+ GET /login 200 in 4141ms
+ GET /scan/new 200 in 4886ms
+ GET /login 200 in 3131ms
+ GET /scan/new 200 in 2362ms
+ ✓ Compiled /icon.svg in 456ms (524 modules)
+ GET /icon.svg?ab7577bf9d99e304 200 in 677ms
+ GET / 200 in 533ms
+ GET /scan/new 200 in 386ms
+ GET /icon.svg?ab7577bf9d99e304 200 in 28ms
+ ○ Compiling /high-priority-inspections ...
+ ✓ Compiled /high-priority-inspections in 4.4s (887 modules)
+ GET /high-priority-inspections 200 in 5335ms
+ GET /login 200 in 1033ms
+ GET /high-priority-inspections 200 in 284ms
+ ✓ Compiled in 181ms (115 modules)
+ GET /login?next=%2Fdashboard 200 in 429ms
+ GET /login?next=%2Fdashboard 200 in 101ms
+ GET /login?next=%2Fdashboard 200 in 136ms
+ GET /login?next=%2Fdashboard 200 in 143ms
+ GET /login?next=%2Fdashboard 200 in 77ms
+ ○ Compiling /_not-found ...
+ ✓ Compiled /_not-found in 756ms (861 modules)
+ GET /dashboard 404 in 1271ms
+ GET /dashboard 200 in 169ms
+ GET /dashboard 200 in 103ms
+ GET /dashboard 200 in 87ms
+ ✓ Compiled in 1042ms (354 modules)
+ GET /login 200 in 153ms
+ ✓ Compiled in 1711ms (856 modules)
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ GET /login 200 in 912ms
+ ✓ Compiled in 3.8s (870 modules)
+ ✓ Compiled in 1276ms (856 modules)
+ ⨯ ./lib/hooks/useSupabaseData.ts
+Error:   [31mx[0m Return statement is not allowed here
+     ,-[[36;1;4mC:\Users\Dnyaneshwar\Desktop\PackIntel\PackIntel\frontend\lib\hooks\useSupabaseData.ts[0m:101:1]
+ [2m 98[0m |     }
+ [2m 99[0m |   }, [fetchInspections, user]);
+ [2m100[0m | 
+ [2m101[0m |   return { inspections, count, isLoading, error, refetch: fetchInspections };
+     : [35;1m  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+ [2m102[0m | }
+ [2m103[0m | 
+ [2m103[0m | // ─── Single Inspection Hook ────────────────────────────────────────────────────
+     `----
+  [31mx[0m Expression expected
+     ,-[[36;1;4mC:\Users\Dnyaneshwar\Desktop\PackIntel\PackIntel\frontend\lib\hooks\useSupabaseData.ts[0m:102:1]
+ [2m 99[0m |   }, [fetchInspections, user]);
+ [2m100[0m | 
+ [2m101[0m |   return { inspections, count, isLoading, error, refetch: fetchInspections };
+ [2m102[0m | }
+     : [35;1m^[0m
+ [2m103[0m | 
+ [2m104[0m | // ─── Single Inspection Hook ────────────────────────────────────────────────────
+ [2m104[0m | export function useInspection(inspectionId: string | null) {
+     `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./lib/hooks/useSupabaseData.ts
+./features/dashboard/DashboardView.tsx
+ ✓ Compiled in 677ms (856 modules)
+ ✓ Compiled in 991ms (354 modules)
+ ✓ Compiled in 901ms (856 modules)
+ ○ Compiling /analytics ...
+ ✓ Compiled /analytics in 711ms (863 modules)
+ GET /analytics 200 in 1356ms
+ GET /dashboard 200 in 121ms
+ GET /scan/new 200 in 713ms
+ GET /login 200 in 420ms
+ ○ Compiling /icon.svg ...
+ ✓ Compiled /icon.svg in 1183ms (533 modules)
+ GET /icon.svg?ab7577bf9d99e304 200 in 1701ms
+ GET /icon.svg?ab7577bf9d99e304 200 in 42ms
+ GET /scan/new 200 in 1188ms
+ GET /scan/new 200 in 364ms
+ GET /icon.svg?ab7577bf9d99e304 200 in 41ms
+ GET /scan/new 200 in 323ms
+ GET /icon.svg?ab7577bf9d99e304 200 in 67ms
+ GET /scan/new 200 in 449ms
+ GET /icon.svg?ab7577bf9d99e304 200 in 59ms
+ GET /scan/new 200 in 322ms
+ GET /icon.svg?ab7577bf9d99e304 200 in 36ms
+ ✓ Compiled in 2.4s (872 modules)
+ ✓ Compiled in 1231ms (872 modules)
+ ✓ Compiled in 1147ms (872 modules)
+ ✓ Compiled in 1469ms (872 modules)
+ ✓ Compiled in 1284ms (872 modules)
+ ⨯ ./features/scan/NewScanView.tsx
+Error:   [31mx[0m Expected corresponding JSX closing tag for <label>
+     ,-[[36;1;4mC:\Users\Dnyaneshwar\Desktop\PackIntel\PackIntel\frontend\features\scan\NewScanView.tsx[0m:797:1]
+ [2m794[0m |           <span className="mt-0.5 text-[10px] text-[#94a3b8]">Choose image</span>
+ [2m795[0m |         </>
+ [2m796[0m |       )}
+ [2m797[0m |     </button>
+     : [35;1m      ^^^^^^[0m
+ [2m798[0m |   );
+ [2m799[0m | }
+ [2m799[0m | 
+     `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./features/scan/NewScanView.tsx
+./app/scan/new/page.tsx
+ ✓ Compiled in 1431ms (872 modules)
+ ✓ Compiled in 1264ms (872 modules)
+ ✓ Compiled in 980ms (356 modules)
+ ✓ Compiled in 1775ms (872 modules)
+ ✓ Compiled in 1815ms (872 modules)
+ ✓ Compiled in 1118ms (872 modules)
+ ✓ Compiled in 1067ms (872 modules)
+ ✓ Compiled in 883ms (872 modules)
+ ✓ Compiled in 1123ms (872 modules)
+ ⨯ ./features/scan/NewScanView.tsx
+Error:   [31mx[0m Expected corresponding JSX closing tag for <label>
+     ,-[[36;1;4mC:\Users\Dnyaneshwar\Desktop\PackIntel\PackIntel\frontend\features\scan\NewScanView.tsx[0m:797:1]
+ [2m794[0m |           <span className="mt-0.5 text-[10px] text-[#94a3b8]">Choose image</span>
+ [2m795[0m |         </>
+ [2m796[0m |       )}
+ [2m797[0m |     </button>
+     : [35;1m      ^^^^^^[0m
+ [2m798[0m |   );
+ [2m799[0m | }
+ [2m799[0m | 
+     `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./features/scan/NewScanView.tsx
+./app/scan/new/page.tsx
+ ✓ Compiled in 1172ms (858 modules)
+ ✓ Compiled in 1239ms (872 modules)
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, rename 'C:\Users\Dnyaneshwar\Desktop\PackIntel\PackIntel\frontend\.next\cache\webpack\client-development\6.pack.gz_' -> 'C:\Users\Dnyaneshwar\Desktop\PackIntel\PackIntel\frontend\.next\cache\webpack\client-development\6.pack.gz'
+ GET /scan/new 200 in 1104ms
+ ○ Compiling /icon.svg ...
+ ✓ Compiled /icon.svg in 555ms (533 modules)
+ GET /icon.svg?ab7577bf9d99e304 200 in 764ms
+ GET /scan/new 200 in 657ms
+ GET /icon.svg?ab7577bf9d99e304 200 in 37ms
+ GET /scan/new 200 in 329ms
+ GET /icon.svg?ab7577bf9d99e304 200 in 39ms
+ GET /scan/new 200 in 277ms
+ GET /icon.svg?ab7577bf9d99e304 200 in 34ms
+ ✓ Compiled in 1326ms (872 modules)
+ ✓ Compiled in 941ms (872 modules)
+ ✓ Compiled in 1051ms (872 modules)
+ ✓ Compiled in 915ms (872 modules)
+ ✓ Compiled in 834ms (872 modules)
+ ✓ Compiled in 964ms (872 modules)
+ ✓ Compiled in 1096ms (874 modules)
+ ✓ Compiled in 1077ms (874 modules)
+ ✓ Compiled in 980ms (874 modules)
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, rename 'C:\Users\Dnyaneshwar\Desktop\PackIntel\PackIntel\frontend\.next\cache\webpack\client-development\0.pack.gz_' -> 'C:\Users\Dnyaneshwar\Desktop\PackIntel\PackIntel\frontend\.next\cache\webpack\client-development\0.pack.gz'
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, rename 'C:\Users\Dnyaneshwar\Desktop\PackIntel\PackIntel\frontend\.next\cache\webpack\server-development\1.pack.gz_' -> 'C:\Users\Dnyaneshwar\Desktop\PackIntel\PackIntel\frontend\.next\cache\webpack\server-development\1.pack.gz'
+ ✓ Compiled in 1290ms (874 modules)
+ ✓ Compiled in 897ms (874 modules)
+ ✓ Compiled in 863ms (874 modules)
+ ✓ Compiled in 950ms (874 modules)
+ ✓ Compiled in 862ms (874 modules)
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, rename 'C:\Users\Dnyaneshwar\Desktop\PackIntel\PackIntel\frontend\.next\cache\webpack\server-development\0.pack.gz_' -> 'C:\Users\Dnyaneshwar\Desktop\PackIntel\PackIntel\frontend\.next\cache\webpack\server-development\0.pack.gz'
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, rename 'C:\Users\Dnyaneshwar\Desktop\PackIntel\PackIntel\frontend\.next\cache\webpack\client-development\0.pack.gz_' -> 'C:\Users\Dnyaneshwar\Desktop\PackIntel\PackIntel\frontend\.next\cache\webpack\client-development\0.pack.gz'
+ ✓ Compiled in 1784ms (874 modules)
+ ✓ Compiled in 1151ms (874 modules)
+ ✓ Compiled in 1099ms (975 modules)
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, rename 'C:\Users\Dnyaneshwar\Desktop\PackIntel\PackIntel\frontend\.next\cache\webpack\server-development\0.pack.gz_' -> 'C:\Users\Dnyaneshwar\Desktop\PackIntel\PackIntel\frontend\.next\cache\webpack\server-development\0.pack.gz'
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, rename 'C:\Users\Dnyaneshwar\Desktop\PackIntel\PackIntel\frontend\.next\cache\webpack\client-development\0.pack.gz_' -> 'C:\Users\Dnyaneshwar\Desktop\PackIntel\PackIntel\frontend\.next\cache\webpack\client-development\0.pack.gz'
+ ⨯ Error: ENOENT: no such file or directory, open 'C:\Users\Dnyaneshwar\Desktop\PackIntel\PackIntel\frontend\.next\server\vendor-chunks\lucide-react.js'
+    at <unknown> (C:\Users\Dnyaneshwar\Desktop\PackIntel\PackIntel\frontend\.next\server\app\scan\new\page.js:456:47)
+    at Object.<anonymous> (C:\Users\Dnyaneshwar\Desktop\PackIntel\PackIntel\frontend\.next\server\app\scan\new\page.js:459:3) {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\Users\\Dnyaneshwar\\Desktop\\PackIntel\\PackIntel\\frontend\\.next\\server\\vendor-chunks\\lucide-react.js',
+  page: '/scan/new'
+}
+ ○ Compiling /_error ...
+ ✓ Compiled /_error in 5s (1207 modules)
+ GET /scan/new 500 in 6076ms
+ ⨯ Error: ENOENT: no such file or directory, open 'C:\Users\Dnyaneshwar\Desktop\PackIntel\PackIntel\frontend\.next\server\vendor-chunks\lucide-react.js'
+    at <unknown> (C:\Users\Dnyaneshwar\Desktop\PackIntel\PackIntel\frontend\.next\server\app\scan\new\page.js:456:47)
+    at Object.<anonymous> (C:\Users\Dnyaneshwar\Desktop\PackIntel\PackIntel\frontend\.next\server\app\scan\new\page.js:459:3) {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\Users\\Dnyaneshwar\\Desktop\\PackIntel\\PackIntel\\frontend\\.next\\server\\vendor-chunks\\lucide-react.js',
+  page: '/scan/new'
+}
+ GET /scan/new 500 in 473ms

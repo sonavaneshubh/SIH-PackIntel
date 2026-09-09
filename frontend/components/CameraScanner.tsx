@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ArrowLeft,
   Camera,
   CameraOff,
   Check,
@@ -9,6 +10,7 @@ import {
   CircleAlert,
   Flashlight,
   FlashlightOff,
+  Focus,
   ImagePlus,
   Redo2,
   Rotate3D,
@@ -34,6 +36,7 @@ export interface CameraScannerProps {
   onSideCaptured?: (result: CaptureSideResult) => void;
   onCameraStateChange?: (state: ScannerState) => void;
   onUploadRequest?: () => void;
+  onExitScanner?: () => void;
 }
 
 const TURN_DELAY_MS = 1400;
@@ -116,6 +119,7 @@ export function CameraScanner({
   onSideCaptured,
   onCameraStateChange,
   onUploadRequest,
+  onExitScanner,
 }: CameraScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const captureCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -405,6 +409,23 @@ export function CameraScanner({
     };
   }, [startCamera, stopStream]);
 
+  // On mobile the camera is presented as a fixed fullscreen overlay that sits on
+  // top of the dashboard layout. Lock the underlying scroll container while the
+  // scanner is mounted and restore it when the scanner unmounts so the page can
+  // never scroll behind the camera. Desktop is unaffected.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!window.matchMedia('(max-width: 767px)').matches) return;
+    const mainEl = document.querySelector('main');
+    const scroller = mainEl?.parentElement as HTMLElement | null;
+    if (scroller) scroller.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+    return () => {
+      if (scroller) scroller.style.overflow = '';
+      document.body.style.overflow = '';
+    };
+  }, []);
+
   // Surface mid-session camera failures (cable pull, device disconnect, etc.)
   // with an actionable error + retry instead of a frozen black preview.
   useEffect(() => {
@@ -559,8 +580,8 @@ export function CameraScanner({
     phase === 'turn_package';
 
   return (
-    <div className="mt-6">
-      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-[#0a0d14] sm:aspect-video">
+    <div className="relative md:mt-6">
+      <div className="scanner-mobile-camera relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-[#0a0d14] sm:aspect-video">
         <video
           ref={videoRef}
           autoPlay
@@ -572,7 +593,7 @@ export function CameraScanner({
         <canvas ref={captureCanvasRef} className="hidden" />
         <canvas ref={analysisCanvasRef} className="hidden" />
 
-        <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-4 py-3">
+        <div className="absolute inset-x-0 top-0 z-10 hidden items-center justify-between px-4 py-3 md:flex">
           <span className="rounded bg-black/55 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-[#cbd5e1] backdrop-blur-sm">
             Step {scanSide === 'front' ? '1' : '2'} of 2 — Scan {scanSide === 'front' ? 'Front' : 'Back'} Side
           </span>
@@ -589,14 +610,37 @@ export function CameraScanner({
           </div>
         </div>
 
+        {/* ── Mobile fullscreen top header ── */}
+        <div className="scanner-mobile-header absolute inset-x-0 top-0 z-20 flex items-center gap-3 px-4 md:hidden">
+          <button
+            type="button"
+            onClick={() => onExitScanner?.()}
+            aria-label="Back to the previous screen"
+            className="flex size-10 shrink-0 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm transition-colors active:bg-black/60"
+          >
+            <ArrowLeft size={20} aria-hidden="true" />
+          </button>
+          <div className="min-w-0">
+            <p className="text-[17px] font-bold leading-snug text-white drop-shadow">
+              Scan {scanSide === 'front' ? 'Front' : 'Back'} Side
+            </p>
+            <p className="mt-0.5 text-[13px] font-semibold text-white/85 drop-shadow">
+              Step {scanSide === 'front' ? '1' : '2'} of 2
+            </p>
+            <p className="mt-0.5 text-[12px] font-medium text-white/70 drop-shadow">
+              Position the package within the frame
+            </p>
+          </div>
+        </div>
+
         {frameOverlayActive && (
           <div className="pointer-events-none absolute inset-0 z-[5]">
-            <div className="absolute inset-[6%] rounded-2xl border-2 border-[#00bfa5]/60 transition-all duration-300" />
-            <div className="absolute inset-[6%] rounded-2xl">
+            <div className="scanner-frame-guide absolute inset-[6%] rounded-2xl border-2 border-[#00bfa5]/60 transition-all duration-300" />
+            <div className="scanner-frame-guide absolute inset-[6%] rounded-2xl">
               {['top-left', 'top-right', 'bottom-left', 'bottom-right'].map((corner) => (
                 <span
                   key={corner}
-                  className={`absolute size-6 border-[#00bfa5] ${
+                  className={`scanner-corner absolute size-6 border-[#00bfa5] ${
                     corner === 'top-left' ? 'left-0 top-0 border-l-[3px] border-t-[3px] rounded-tl-2xl' : ''
                   }${
                     corner === 'top-right' ? 'right-0 top-0 border-r-[3px] border-t-[3px] rounded-tr-2xl' : ''
@@ -612,7 +656,7 @@ export function CameraScanner({
         )}
 
         {(phase === 'camera_ready' || phase === 'searching_for_package' || phase === 'searching_back' || phase === 'turn_package') && (
-          <div className="pointer-events-none absolute inset-x-[6%] bottom-4 z-[6] flex flex-col items-center">
+          <div className="pointer-events-none absolute inset-x-[6%] bottom-4 z-[6] hidden flex-col items-center md:flex">
             <div className="scanner-fade-in-up flex flex-col items-center rounded-lg bg-black/40 px-4 py-2 text-center backdrop-blur-[2px]">
               <p className="text-sm font-semibold text-white">
                 {phase === 'turn_package'
@@ -629,6 +673,27 @@ export function CameraScanner({
             </div>
           </div>
         )}
+
+        {/* ── Mobile lower-middle instruction ── */}
+        <div className="scanner-mobile-hint pointer-events-none absolute inset-x-6 z-[6] flex justify-center md:hidden">
+          <div className="flex max-w-[21rem] items-center gap-2.5 rounded-xl border border-white/10 bg-black/60 px-3.5 py-2.5 backdrop-blur-md">
+            <Focus size={16} className="shrink-0 text-[#00bfa5]" aria-hidden="true" />
+            <span className="text-left">
+              <span className="block text-[12px] font-semibold leading-snug text-white">
+                {phase === 'turn_package'
+                  ? 'Turn the package around'
+                  : scanSide === 'back'
+                    ? 'Point at the back side'
+                    : 'Keep the package inside the frame'}
+              </span>
+              <span className="block text-[11px] font-normal leading-snug text-white/75">
+                {phase === 'turn_package'
+                  ? 'When ready, tap Capture below'
+                  : 'Make sure the text is clear and well lit'}
+              </span>
+            </span>
+          </div>
+        </div>
 
         {phase === 'front_captured' && (
           <div className="scanner-fade-in-up absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/45 backdrop-blur-sm">
@@ -733,7 +798,7 @@ export function CameraScanner({
             aria-label={torchButtonLabel}
             aria-pressed={torchOn}
             title={torchButtonLabel}
-            className={`absolute bottom-3 left-4 z-[7] flex size-10 items-center justify-center rounded-full border backdrop-blur-sm transition-colors ${
+            className={`absolute bottom-3 left-4 z-[7] hidden size-10 items-center justify-center rounded-full border backdrop-blur-sm transition-colors md:flex ${
               torchOn
                 ? 'border-[#00bfa5] bg-[#00bfa5] text-white'
                 : 'border-white/25 bg-black/45 text-white hover:bg-black/60'
@@ -747,7 +812,7 @@ export function CameraScanner({
           </button>
         )}
 
-        <div className="pointer-events-none absolute bottom-3 right-4 z-[7] flex items-center justify-end">
+        <div className="pointer-events-none absolute bottom-3 right-4 z-[7] hidden items-center justify-end md:flex">
           <span
             className={`flex items-center gap-1.5 rounded bg-black/55 px-2 py-1 text-[10px] font-semibold tracking-wide backdrop-blur-sm ${
               phase === 'permission_denied' || phase === 'camera_error' ? 'text-amber-400' : 'text-[#cbd5e1]'
@@ -763,14 +828,67 @@ export function CameraScanner({
         </div>
 
         {cameraError && (phase === 'camera_error' || phase === 'permission_denied') && (
-          <div className="absolute inset-x-4 bottom-12 z-[8] flex items-center gap-2 rounded bg-red-950/90 px-3 py-2 text-[11px] text-red-100">
+          <div className="scanner-error-banner absolute inset-x-4 bottom-12 z-[8] flex items-center gap-2 rounded bg-red-950/90 px-3 py-2 text-[11px] text-red-100">
             <CircleAlert size={12} className="shrink-0" aria-hidden="true" />
             {cameraError.message}
           </div>
         )}
+
+        {/* ── Mobile fullscreen bottom controls ── */}
+        <div className="absolute inset-x-0 bottom-0 z-20 md:hidden">
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-black/95 via-black/60 to-transparent" />
+          <div className="scanner-mobile-controls relative flex items-end justify-between px-6 pt-3">
+            <button
+              type="button"
+              onClick={onUploadRequest}
+              aria-label="Upload image from the gallery instead of using the camera"
+              className="flex flex-col items-center gap-1.5 rounded-xl text-white"
+            >
+              <span className="flex size-12 items-center justify-center rounded-full border border-white/25 bg-black/45 text-white backdrop-blur-sm transition-colors active:bg-black/70">
+                <ImagePlus size={22} aria-hidden="true" />
+              </span>
+              <span className="text-[11px] font-semibold drop-shadow">Gallery</span>
+            </button>
+
+            <div className="flex flex-col items-center gap-1.5 pb-1">
+              <span className="text-[11px] font-semibold text-white drop-shadow">{captureLabel}</span>
+              <button
+                type="button"
+                onClick={() => captureSide(scanSideRef.current)}
+                disabled={captureDisabled}
+                aria-label={captureLabel}
+                className={`relative flex size-[4.5rem] items-center justify-center rounded-full border-[3px] border-white/95 transition-transform active:scale-95 ${
+                  captureDisabled ? 'opacity-50' : ''
+                }`}
+              >
+                <span className="flex size-[3.5rem] items-center justify-center rounded-full bg-white text-[#0a0d14] shadow-[0_0_24px_rgba(0,0,0,0.55)]">
+                  <Camera size={26} aria-hidden="true" />
+                </span>
+              </button>
+            </div>
+
+            {torchSupported ? (
+              <button
+                type="button"
+                onClick={() => void toggleTorch()}
+                aria-label={torchButtonLabel}
+                aria-pressed={torchOn}
+                title={torchButtonLabel}
+                className="flex flex-col items-center gap-1.5 rounded-xl text-white"
+              >
+                <span className="flex size-12 items-center justify-center rounded-full border border-white/25 bg-black/45 text-white backdrop-blur-sm transition-colors active:bg-black/70">
+                  {torchOn ? <FlashlightOff size={20} aria-hidden="true" /> : <Flashlight size={20} aria-hidden="true" />}
+                </span>
+                <span className="text-[11px] font-semibold drop-shadow">Flash</span>
+              </button>
+            ) : (
+              <span className="w-12" aria-hidden="true" />
+            )}
+          </div>
+        </div>
       </div>
 
-      <div className="mt-4 flex flex-col items-center gap-3">
+      <div className="mt-4 hidden flex-col items-center gap-3 md:flex">
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-center">
           <Button
             variant="primary"
@@ -805,7 +923,7 @@ export function CameraScanner({
         )}
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-3">
+      <div className="mt-4 hidden grid-cols-2 gap-3 md:grid">
         <SideCaptureSlot label="Front Side" capture={frontSide} />
         <SideCaptureSlot label="Back Side" capture={backSide} />
       </div>

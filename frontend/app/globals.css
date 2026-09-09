@@ -216,6 +216,48 @@
   animation: scanner-status-flash 0.9s ease-out both;
 }
 
+/* ── Mobile fullscreen scanner (≤767px, desktop untouched) ── */
+@media (max-width: 767px) {
+  .scanner-mobile-camera {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    border-radius: 0;
+    z-index: 70;
+    overscroll-behavior: none;
+  }
+
+  .scanner-mobile-camera .scanner-frame-guide {
+    inset: 16% 7% calc(15rem + env(safe-area-inset-bottom));
+  }
+
+  .scanner-mobile-camera .scanner-corner {
+    width: 36px;
+    height: 36px;
+  }
+
+  .scanner-mobile-header {
+    min-height: 7.5rem;
+    padding-top: calc(0.75rem + env(safe-area-inset-top));
+    padding-bottom: 2.75rem;
+    background: linear-gradient(to bottom, rgba(0, 0, 0, 0.78), rgba(0, 0, 0, 0.38), transparent);
+  }
+
+  .scanner-mobile-hint {
+    bottom: calc(11rem + env(safe-area-inset-bottom));
+  }
+
+  .scanner-mobile-controls {
+    padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
+  }
+
+  .scanner-mobile-camera .scanner-error-banner {
+    bottom: calc(12.5rem + env(safe-area-inset-bottom));
+  }
+}
+
 /* ── PackIntel Homepage entrance animations ─────────────── */
 @keyframes home-fade-up {
   from {
