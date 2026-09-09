@@ -9,6 +9,11 @@ import {
   sendAdminVerificationEmail,
   isEmailConfigured,
 } from '@/lib/email/sendAdminVerificationEmail';
+import {
+  resolveAppBaseUrl,
+  buildReviewUrl,
+  buildActionUrl,
+} from '@/lib/verification/linkBuilder';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,20 +21,6 @@ export const dynamic = 'force-dynamic';
 interface NotifyBody {
   userId?: string;
   email?: string;
-}
-
-function buildReviewUrl(request: NextRequest, token: string): string {
-  const forwardedProto = request.headers.get('x-forwarded-proto') || 'http';
-  const forwardedHost = request.headers.get('x-forwarded-host') || request.headers.get('host');
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (forwardedHost ? `${forwardedProto}://${forwardedHost}` : 'http://localhost:3000');
-  return `${baseUrl.replace(/\/+$/, '')}/admin/inspector-verification/${token}`;
-}
-
-function buildActionUrl(request: NextRequest, token: string, action: 'approve' | 'reject'): string {
-  const forwardedProto = request.headers.get('x-forwarded-proto') || 'http';
-  const forwardedHost = request.headers.get('x-forwarded-host') || request.headers.get('host');
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (forwardedHost ? `${forwardedProto}://${forwardedHost}` : 'http://localhost:3000');
-  return `${baseUrl.replace(/\/+$/, '')}/api/signup/verify-action?token=${encodeURIComponent(token)}&action=${action}`;
 }
 
 export async function POST(request: NextRequest) {
@@ -71,6 +62,7 @@ export async function POST(request: NextRequest) {
     hasAdminEmail: Boolean(process.env.ADMIN_VERIFICATION_EMAIL),
     hasEmailFrom: Boolean(process.env.EMAIL_FROM),
     hasResendKey: Boolean(process.env.RESEND_API_KEY),
+    baseUrl: resolveAppBaseUrl(request),
   });
 
   // The canonical email lives in auth.users (supabase.auth.signUp creates the

@@ -10,26 +10,17 @@ import {
   sendAdminVerificationEmail,
   isEmailConfigured,
 } from '@/lib/email/sendAdminVerificationEmail';
+import {
+  resolveAppBaseUrl,
+  buildReviewUrl,
+  buildActionUrl,
+} from '@/lib/verification/linkBuilder';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 interface ResendBody {
   profileId?: string;
-}
-
-function buildReviewUrl(request: NextRequest, token: string): string {
-  const forwardedProto = request.headers.get('x-forwarded-proto') || 'http';
-  const forwardedHost = request.headers.get('x-forwarded-host') || request.headers.get('host');
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (forwardedHost ? `${forwardedProto}://${forwardedHost}` : 'http://localhost:3000');
-  return `${baseUrl.replace(/\/+$/, '')}/admin/inspector-verification/${token}`;
-}
-
-function buildActionUrl(request: NextRequest, token: string, action: 'approve' | 'reject'): string {
-  const forwardedProto = request.headers.get('x-forwarded-proto') || 'http';
-  const forwardedHost = request.headers.get('x-forwarded-host') || request.headers.get('host');
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (forwardedHost ? `${forwardedProto}://${forwardedHost}` : 'http://localhost:3000');
-  return `${baseUrl.replace(/\/+$/, '')}/api/signup/verify-action?token=${encodeURIComponent(token)}&action=${action}`;
 }
 
 export async function POST(request: NextRequest) {
