@@ -924,7 +924,9 @@ class ReportService:
 
         # Pipeline & image quality diagnostics
         story.append(Paragraph("PIPELINE & IMAGE QUALITY DIAGNOSTICS", section_style))
-        front_url = image_urls.get("label_front") or image_urls.get("product_full")
+        crop_url = image_urls.get("evidence_crop")
+        front_url = crop_url or image_urls.get("label_front") or image_urls.get("product_full")
+        original_front_url = image_urls.get("label_front") or image_urls.get("product_full")
         back_url = image_urls.get("label_back")
         ocr_text = label.get("raw_ocr_text") or ""
         raw_engine = (
@@ -973,7 +975,9 @@ class ReportService:
 
         # Scanned label images (embedded copies of the front & back photographs)
         story.append(Paragraph("SCANNED LABEL IMAGES", section_style))
-        max_img_w = doc.width / 2.0 - 6
+        # The auto-crop of the declaration area leads the section when present.
+        col_count = 3 if crop_url else 2
+        max_img_w = doc.width / float(col_count) - 6
         max_img_h = 90
 
         def _image_flowable(url: Optional[str], caption: str):
@@ -999,27 +1003,62 @@ class ReportService:
                 ),
             ]
 
-        story.append(
-            Table(
-                [
+        if crop_url:
+            # Declaration Area (auto-crop) is the focused evidence; the original
+            # front photograph is shown for provenance.
+            crop_cells = _image_flowable(crop_url, "Declaration Area (Auto-Crop)")
+            story.append(
+                Table(
                     [
-                        _image_flowable(front_url, "Front")[0] or Paragraph("Image unavailable", small_style),
-                        _image_flowable(back_url, "Back")[0] or Paragraph("Image unavailable", small_style),
+                        [
+                            crop_cells[0] or Paragraph("Image unavailable", small_style),
+                            _image_flowable(original_front_url, "Front Original")[0]
+                            or Paragraph("Image unavailable", small_style),
+                            _image_flowable(back_url, "Back")[0]
+                            or Paragraph("Image unavailable", small_style),
+                        ],
+                        [
+                            Paragraph(
+                                "<b>Declaration Area:</b> "
+                                + (_xml(crop_url) if crop_url else NOT_DETECTED),
+                                small_style,
+                            ),
+                            Paragraph(
+                                "<b>Front (Original):</b> "
+                                + (_xml(original_front_url) if original_front_url else NOT_DETECTED),
+                                small_style,
+                            ),
+                            Paragraph(
+                                "<b>Back:</b> " + (_xml(back_url) if back_url else NOT_DETECTED),
+                                small_style,
+                            ),
+                        ],
                     ],
-                    [
-                        Paragraph(
-                            "<b>Front:</b> " + (_xml(front_url) if front_url else NOT_DETECTED),
-                            small_style,
-                        ),
-                        Paragraph(
-                            "<b>Back:</b> " + (_xml(back_url) if back_url else NOT_DETECTED),
-                            small_style,
-                        ),
-                    ],
-                ],
-                colWidths=[doc.width / 2.0, doc.width / 2.0],
+                    colWidths=[doc.width / 3.0] * 3,
+                )
             )
-        )
+        else:
+            story.append(
+                Table(
+                    [
+                        [
+                            _image_flowable(front_url, "Front")[0] or Paragraph("Image unavailable", small_style),
+                            _image_flowable(back_url, "Back")[0] or Paragraph("Image unavailable", small_style),
+                        ],
+                        [
+                            Paragraph(
+                                "<b>Front:</b> " + (_xml(front_url) if front_url else NOT_DETECTED),
+                                small_style,
+                            ),
+                            Paragraph(
+                                "<b>Back:</b> " + (_xml(back_url) if back_url else NOT_DETECTED),
+                                small_style,
+                            ),
+                        ],
+                    ],
+                    colWidths=[doc.width / 2.0, doc.width / 2.0],
+                )
+            )
 
         # OCR text
         story.append(Paragraph("ORIGINAL OCR TEXT", section_style))

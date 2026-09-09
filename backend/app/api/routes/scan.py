@@ -36,6 +36,7 @@ from app.services.vision_service import (
     should_use_vision_fallback,
 )
 from app.services.gemini_vision import GeminiVisionService, _average_detected_confidence
+from app.services.crop_service import crop_to_bytes
 from app.api.dependencies import get_current_user
 
 router = APIRouter()
@@ -330,6 +331,26 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
     front_side = per_side[0] if per_side else None
     back_side = per_side[1] if len(per_side) > 1 else None
 
+    # ---- Auto-crop: extract declaration / label area from the front image ---
+    evidence_crop_b64: Optional[str] = None
+    evidence_crop_meta: Optional[Dict[str, Any]] = None
+    try:
+        _crop_regions = front_result.get("layout_regions") or front_result.get("regions") or []
+        front_ref = sides[0].get("image_ref") if sides else None
+        front_pil = sides[0].get("pil_image") or (OCRService._fetch_image(front_ref) if front_ref else None)
+        if front_pil is not None:
+            crop_bytes, evidence_crop_meta = crop_to_bytes(
+                front_pil, _crop_regions, fmt="JPEG", quality=92,
+            )
+            import base64 as _b64
+            evidence_crop_b64 = _b64.b64encode(crop_bytes).decode()
+            logger.info(
+                "Auto-crop completed: strategy=%s, size=%d bytes",
+                evidence_crop_meta.get("strategy"), len(crop_bytes),
+            )
+    except Exception as exc:
+        logger.warning("Auto-crop failed (non-fatal): %s", exc)
+
     response = ScanResponse(
         status=result_status,
         success=True,
@@ -362,6 +383,8 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
         images_processed=len(per_side),
         detection=front_detection,
         warnings=warnings,
+        evidence_crop_base64=evidence_crop_b64,
+        evidence_crop_meta=evidence_crop_meta,
     )
 
     return response

@@ -63,6 +63,7 @@ export function ReportView() {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [backImage, setBackImage] = useState<InspectionImage | null>(null);
   const [backImageUrl, setBackImageUrl] = useState<string | null>(null);
+  const [cropImageUrl, setCropImageUrl] = useState<string | null>(null);
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [error, setError] = useState<string | null>(null);
   const [reportMessage, setReportMessage] = useState('');
@@ -94,10 +95,13 @@ export function ReportView() {
       const images: InspectionImage[] = data.inspection_images || [];
       const frontImage = images.find((img) => img.image_type === 'label_front') || images[0] || null;
       const backImage = images.find((img) => img.image_type === 'label_back') || null;
+      // The auto-cropped declaration area is the preferred evidence to show.
+      const evidenceCrop = images.find((img) => img.image_type === 'evidence_crop') || null;
       setImage(frontImage);
       setBackImage(backImage);
       setImageUrl(null);
       setBackImageUrl(null);
+      setCropImageUrl(null);
       if (frontImage?.storage_path) {
         const signed = await getSignedImageUrl(frontImage.storage_path);
         setImageUrl(signed.url || frontImage.public_url || null);
@@ -105,6 +109,10 @@ export function ReportView() {
       if (backImage?.storage_path) {
         const signedBack = await getSignedImageUrl(backImage.storage_path);
         setBackImageUrl(signedBack.url || backImage.public_url || null);
+      }
+      if (evidenceCrop?.storage_path) {
+        const signedCrop = await getSignedImageUrl(evidenceCrop.storage_path);
+        setCropImageUrl(signedCrop.url || evidenceCrop.public_url || null);
       }
       setLoadState('ready');
     } catch {
@@ -267,8 +275,16 @@ export function ReportView() {
               </div>
             </div>
 
-            {/* Right: front & back scanned images (equal sizing, never stretched) */}
+            {/* Right: auto-crop of the declaration area + front & back originals */}
             <div className="flex gap-3 sm:gap-4">
+              {cropImageUrl && (
+                <ScanImageBox
+                  url={cropImageUrl}
+                  caption="Declaration Area"
+                  alt="Auto-cropped declaration / label area of the scanned package"
+                  highlighted
+                />
+              )}
               <ScanImageBox
                 url={imageUrl}
                 caption="Front"
@@ -574,15 +590,23 @@ function ScanImageBox({
   url,
   caption,
   alt,
+  highlighted,
 }: {
   url: string | null;
-  caption: 'Front' | 'Back';
+  caption: string;
   alt: string;
+  highlighted?: boolean;
 }) {
   return (
     <figure className="group flex w-[150px] flex-col sm:w-[220px]">
       {url ? (
-        <div className="h-[110px] w-full overflow-hidden rounded-xl border border-outline-variant bg-white shadow-sm transition-all duration-200 group-hover:-translate-y-0.5 group-hover:shadow-md sm:h-[150px]">
+        <div
+          className={`h-[110px] w-full overflow-hidden rounded-xl border bg-white shadow-sm transition-all duration-200 group-hover:-translate-y-0.5 group-hover:shadow-md sm:h-[150px] ${
+            highlighted
+              ? 'border-2 border-primary shadow-primary/25'
+              : 'border-outline-variant'
+          }`}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={url} alt={alt} className="h-full w-full object-contain p-1.5" />
         </div>
@@ -591,7 +615,13 @@ function ScanImageBox({
           {caption} image unavailable
         </div>
       )}
-      <figcaption className="mt-1.5 inline-block self-center rounded-full bg-surface-container-high px-2.5 py-0.5 text-center text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+      <figcaption
+        className={`mt-1.5 inline-block self-center rounded-full px-2.5 py-0.5 text-center text-[10px] font-bold uppercase tracking-wider ${
+          highlighted
+            ? 'bg-primary text-on-primary'
+            : 'bg-surface-container-high text-on-surface-variant'
+        }`}
+      >
         {caption}
       </figcaption>
     </figure>

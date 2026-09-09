@@ -141,6 +141,14 @@ export interface ScanResponse {
   images_processed?: number;
   detection?: ImageDetection;
   warnings?: string[];
+  // Auto-crop evidence: declaration / label area extracted from the front image.
+  evidence_crop_base64?: string | null;
+  evidence_crop_meta?: {
+    strategy?: string;
+    bbox?: { x: number; y: number; width: number; height: number };
+    original_size?: { width: number; height: number };
+    confidence?: number;
+  } | null;
 }
 
 export interface ComplianceCheckRequest {

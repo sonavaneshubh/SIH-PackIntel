@@ -70,14 +70,24 @@ export function OcrAnalysisView() {
         if (imgError) throw imgError;
 
         if (images && images.length > 0) {
-          setImage(images[0]);
-          if (images[0].ocr_text) {
-            setOcrText(images[0].ocr_text);
+          // Prefer the original front-side photograph: the evidence-crop is a
+          // focused declaration panel whose pixel coordinates do not match the
+          // full-image OCR bounding boxes drawn on this view.
+          const displayImage =
+            images.find((img) => img.image_type === 'label_front') ||
+            images.find((img) => img.image_type === 'product_full') ||
+            images[0] ||
+            null;
+          setImage(displayImage);
+          if (displayImage?.ocr_text) {
+            setOcrText(displayImage.ocr_text);
           }
 
           // Get signed URL for private bucket
-          const { url } = await getSignedImageUrl(images[0].storage_path);
-          if (url) setSignedUrl(url);
+          if (displayImage?.storage_path) {
+            const { url } = await getSignedImageUrl(displayImage.storage_path);
+            if (url) setSignedUrl(url);
+          }
         }
 
         // Fetch extracted labels
