@@ -99,6 +99,23 @@ def _as_list(value: Any) -> List[Dict[str, Any]]:
     return []
 
 
+def _dedupe_compliance_results(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Keep one row per rule per inspection.
+
+    compliance_results is written idempotently now, but rows written before the
+    unique index on (inspection_id, rule_code) existed may still contain
+    duplicates. Dedupe by rule code (last occurrence wins) so generated reports
+    never list the same rule twice.
+    """
+    deduped: Dict[str, Any] = {}
+    for result in results:
+        code = result.get("rule_code") or result.get("rule_id")
+        if not code:
+            continue
+        deduped[code] = result
+    return list(deduped.values())
+
+
 def _clean(value: Optional[str]) -> str:
     """Collapse to a printable single-line Latin-1 string (PDF-safe)."""
     if value is None:
@@ -1106,7 +1123,7 @@ class ReportService:
             .order("created_at")
             .execute()
         )
-        results = _as_list(getattr(result_rows, "data", None))
+        results = _dedupe_compliance_results(_as_list(getattr(result_rows, "data", None)))
 
         image_rows = (
             client.table("inspection_images")
@@ -1243,6 +1260,10 @@ class ReportService:
         data = getattr(result, "data", None)
         if not data:
             raise HTTPException(status_code=404, detail="Inspection not found")
+        if isinstance(data.get("compliance_results"), list):
+            data["compliance_results"] = _dedupe_compliance_results(
+                data["compliance_results"]
+            )
         return data
 
     @staticmethod

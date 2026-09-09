@@ -24,6 +24,23 @@ const filterLabels: Record<FilterStatus, string> = {
   PASS: 'Compliant',
 };
 
+// Formats the inspection's scan date strictly from the stored inspection record
+// (inspected_at when set, otherwise created_at). It never falls back to the
+// current system date, so every render shows the same, correct date.
+function formatInspectionDate(inspection: Inspection): string {
+  const timestamp = inspection.inspected_at || inspection.created_at;
+  if (!timestamp) return '—';
+  try {
+    return new Date(timestamp).toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  } catch {
+    return '—';
+  }
+}
+
 export function RecentInspectionsTable({
   allInspections,
   inspections,
@@ -32,6 +49,13 @@ export function RecentInspectionsTable({
   onViewHistory,
   onOpenEvidence,
 }: RecentInspectionsTableProps) {
+  // Derive the scan date once per inspection and share it between the desktop
+  // table and the mobile cards, so a single inspection never renders two
+  // different/duplicated dates.
+  const scanDateByInspection = new Map(
+    inspections.map((inspection) => [inspection.id, formatInspectionDate(inspection)])
+  );
+
   return (
     <Card flush className="flex min-w-0 flex-col">
       <div className="p-4 md:p-5">
@@ -122,11 +146,7 @@ export function RecentInspectionsTable({
                       </td>
                       <td className="p-3">{inspection.manufacturer_name || 'N/A'}</td>
                       <td className="p-3 font-data-tabular text-xs">
-                        {new Date(inspection.created_at || Date.now()).toLocaleDateString('en-GB', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric',
-                        })}
+                        {scanDateByInspection.get(inspection.id) || '—'}
                       </td>
                       <td className="p-3">
                         <StatusBadge status={status} />
@@ -161,11 +181,7 @@ export function RecentInspectionsTable({
                       </p>
                       <p className="mt-0.5 break-words text-xs text-on-surface-variant">
                         {inspection.manufacturer_name || 'N/A'} ·{' '}
-                        {new Date(inspection.created_at || Date.now()).toLocaleDateString('en-GB', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric',
-                        })}
+                        {scanDateByInspection.get(inspection.id) || '—'}
                       </p>
                     </div>
                     <StatusBadge status={status} />

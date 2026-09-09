@@ -92,6 +92,25 @@ function dbErrorDetail(error: any): string {
 
 // ─── Inspections ──────────────────────────────────────────────────────────────
 
+// compliance_results is written idempotently per (inspection_id, rule_code), but
+// rows persisted before the unique index existed may still contain duplicates.
+// Collapse to one row per rule so consumers never double-render or double-count.
+function dedupeComplianceResults(rows: ComplianceResultRow[]): ComplianceResultRow[] {
+  const seen = new Set<string>();
+  const out: ComplianceResultRow[] = [];
+  for (const row of rows) {
+    const key = row.rule_code || row.id;
+    if (!key) {
+      out.push(row);
+      continue;
+    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+  return out;
+}
+
 export async function createInspection(
   fields: Omit<InspectionInsert, 'inspector_id'>
 ): Promise<{ data: Inspection | null; error: string | null }> {
@@ -171,6 +190,7 @@ export async function getInspectionById(inspectionId: string): Promise<{
   const result = {
     ...data,
     extracted_labels: normalizeExtractedLabel(data.extracted_labels),
+    compliance_results: dedupeComplianceResults(data.compliance_results || []),
   };
 
   return { data: result, error: null };
@@ -268,7 +288,11 @@ export async function getHighPriorityInspections(): Promise<{
         ? (row.compliance_results as ComplianceResultRow[])
         : [];
       const priority = derivePriority(row.risk_score ?? null);
-      return { ...(row as Inspection), compliance_results, priority };
+      return {
+        ...(row as Inspection),
+        compliance_results: dedupeComplianceResults(compliance_results),
+        priority,
+      };
     })
     .filter(
       (row): row is HighPriorityInspectionRecord =>
@@ -485,9 +509,9 @@ export async function getMyComplianceReports(): Promise<{
     return {
       ...raw,
       extracted_labels: normalizeExtractedLabel(labelRows[0] ?? null),
-      compliance_results: Array.isArray(raw.compliance_results)
-        ? raw.compliance_results
-        : [],
+      compliance_results: dedupeComplianceResults(
+        Array.isArray(raw.compliance_results) ? raw.compliance_results : []
+      ),
       inspection_images: Array.isArray(raw.inspection_images)
         ? raw.inspection_images
         : [],
@@ -735,11 +759,42 @@ export async function saveComplianceResults(
 
   let currentResults = results.map(r => ({ ...r }));
 
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const { error } = await supabase.from('compliance_results').insert(currentResults);
-    if (!error) return { error: null };
+  // One result row per rule per inspection. Writes are idempotent: upsert on
+  // (inspection_id, rule_code) replaces any prior row instead of inserting a
+  // duplicate. If the target database has not been migrated yet (no unique
+  // index on that pair), fall back to delete-then-insert, which has the same
+  // "latest run wins" semantics as the upsert.
+  const writeResults = async (): Promise<{ ok: boolean; error: any }> => {
+    const { error: upsertError } = await supabase
+      .from('compliance_results')
+      .upsert(currentResults, { onConflict: 'inspection_id,rule_code' });
+    if (!upsertError) return { ok: true, error: null };
 
-    const match = error.message?.match(/Could not find the '([^']+)' column/);
+    const noConflictTarget = upsertError?.code === '42P10' ||
+      /(no unique or exclusion constraint matching the on conflict|PGRST301)/i.test(
+        upsertError?.message || ''
+      );
+    if (!noConflictTarget) return { ok: false, error: upsertError };
+
+    const inspectionId = currentResults[0]?.inspection_id;
+    if (!inspectionId) return { ok: false, error: upsertError };
+    const { error: deleteError } = await supabase
+      .from('compliance_results')
+      .delete()
+      .eq('inspection_id', inspectionId);
+    if (deleteError) return { ok: false, error: deleteError };
+
+    const { error: insertError } = await supabase
+      .from('compliance_results')
+      .insert(currentResults);
+    return insertError ? { ok: false, error: insertError } : { ok: true, error: null };
+  };
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { ok, error } = await writeResults();
+    if (ok) return { error: null };
+
+    const match = error?.message?.match(/Could not find the '([^']+)' column/);
     if (match && match[1]) {
       const missingCol = match[1];
       currentResults = currentResults.map(r => {
