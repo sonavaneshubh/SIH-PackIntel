@@ -172,6 +172,7 @@ def _overlay_addresses(pi: ProductInformation, normalized: str) -> ProductInform
             r"marketed\s*(?:and|&)?\s*distributed\s*by|marketed\s*by|"
             r"marketing\s*(?:by|company)|distributed\s*by",
         ),
+        ("importer", r"import(?:ed)?\s*(?:by|at)"),
     ):
         name_attr = f"{attr}_name"
         addr_attr = f"{attr}_address"

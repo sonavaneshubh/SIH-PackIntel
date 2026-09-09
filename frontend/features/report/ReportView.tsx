@@ -14,14 +14,16 @@ import {
   ExtractedLabel,
   InspectionImage,
 } from '@/types/database';
-import { CONFLICT_SENSITIVE_FIELDS, parseProductInformation } from '@/types/product';
+import { CONFLICT_SENSITIVE_FIELDS, ProductField, parseProductInformation } from '@/types/product';
 import {
   buildPopulatedFields,
   formatDate,
   formatExtractionSource,
   getConfidence,
   getStatus,
+  isField,
   parsePipelineMeta,
+  SUPPLEMENTARY_DECLARATIONS,
   ComplianceResultWithRule,
 } from './reportUtils';
 import { ProductFieldValue, QualityItem, ResultPill, SectionHeading, SummaryItem } from './reportComponents';
@@ -169,6 +171,17 @@ export function ReportView() {
   const populatedFields = useMemo(
     () => buildPopulatedFields(inspection, label, productInformation),
     [inspection, label, productInformation]
+  );
+  const supplementaryFields = useMemo(
+    () =>
+      SUPPLEMENTARY_DECLARATIONS.map(({ key, label: name }) => {
+        const entry = productInformation[key];
+        return { name, key, field: isField(entry) ? entry : null };
+      }).filter(
+        (item): item is { name: string; key: string; field: ProductField } =>
+          !!item.field && item.field.status === 'detected' && !!item.field.value
+      ),
+    [productInformation]
   );
 
   const handlePdf = async () => {
@@ -508,6 +521,40 @@ export function ReportView() {
               </details>
             </Card>
           </div>
+        </section>
+
+        {/* Supplementary declarations detected on the label */}
+        <section className="mb-8">
+          <Card className="p-5">
+            <SectionHeading
+              title="Other Detected Declarations"
+              subtitle="Additional package declarations extracted from the label — informational, not part of the core 16-field grid."
+            />
+            {supplementaryFields.length ? (
+              <dl className="divide-y divide-outline-variant/60">
+                {supplementaryFields.map((item) => (
+                  <div
+                    key={item.key}
+                    className="grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-4 py-2.5 text-sm"
+                  >
+                    <dt className="text-on-surface-variant font-medium text-xs sm:text-sm">
+                      {item.name}
+                    </dt>
+                    <dd>
+                      <ProductFieldValue
+                        field={item.field}
+                        sensitive={CONFLICT_SENSITIVE_FIELDS.has(item.key)}
+                      />
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            ) : (
+              <p className="text-sm text-on-surface-variant">
+                No supplementary declarations were detected.
+              </p>
+            )}
+          </Card>
         </section>
 
         <footer className="report-footer mt-8 border-t border-outline-variant pt-5 text-xs text-on-surface-variant">

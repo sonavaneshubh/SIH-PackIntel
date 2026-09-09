@@ -14,9 +14,10 @@ Conflicts on important fields (MRP, net quantity, dates, FSSAI) are always
 surfaced as 'uncertain' with the raw OCR/vision values preserved for debugging.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.schemas.product import (
+    CONFLICT_SENSITIVE_FIELDS,
     PRODUCT_FIELDS,
     ProductField,
     field as make_field,
@@ -122,3 +123,121 @@ def merge_sources(
         else:  # not_printed from OCR (rare) or fallback
             merged[key] = v if v.status != "not_visible" else o
     return merged
+
+
+def merge_gemini_with_ocr(
+    ocr: Any,
+    gemini: Dict[str, ProductField],
+) -> Tuple[Dict[str, ProductField], Dict[str, int]]:
+    """Fuse Gemini-image extraction with the OCR-pipeline extraction.
+
+    Gemini is the image-primary source and is kept for every field it
+    detected. OCR fills exactly the fields Gemini missed (``not_visible``),
+    which is how back-side-only declarations (importer blocks, batch, FSSAI,
+    expiry, veg marks) survive: the OCR pass reads the combined front+back
+    text, whereas Gemini currently sees only the front image.
+
+    A field that both sources report with different values is never silently
+    resolved: on the conflict-sensitive fields (MRP, net quantity, dates,
+    FSSAI) it is surfaced as ``uncertain`` with both raw values preserved; on
+    all other fields Gemini (the image source) wins.
+    """
+    if ocr is None:
+        ocr_fields: Dict[str, ProductField] = {}
+    elif hasattr(ocr, "as_dict"):
+        ocr_fields = ocr.as_dict()
+    else:
+        ocr_fields = ocr or {}
+
+    merged: Dict[str, ProductField] = {}
+    gemini_detected = 0
+    ocr_gap_filled = 0
+    conflicts = 0
+
+    for key in PRODUCT_FIELDS:
+        o = _entry(ocr_fields.get(key))
+        v = _entry(gemini.get(key))
+
+        if v.status == "detected" and v.value:
+            gemini_detected += 1
+            if o.status == "detected" and o.value and values_differ(o.value, v.value):
+                if key in CONFLICT_SENSITIVE_FIELDS:
+                    conflicts += 1
+                    merged[key] = make_field(
+                        value=v.value,
+                        status="uncertain",
+                        confidence=max(o.confidence, v.confidence),
+                        source="gemini_vision",
+                        conflicts=[
+                            _conflict_meta("ocr", o),
+                            _conflict_meta("gemini_vision", v),
+                        ],
+                    )
+                else:
+                    merged[key] = v
+            else:
+                merged[key] = v
+        elif o.status == "detected" and o.value:
+            ocr_gap_filled += 1
+            merged[key] = o
+        else:
+            # Keep the Gemini entry so a missing field keeps its own source.
+            merged[key] = v
+
+    stats = {
+        "gemini_detected": gemini_detected,
+        "ocr_gap_filled": ocr_gap_filled,
+        "conflicts_surfaced": conflicts,
+        "merged_detected": sum(
+            1
+            for f in merged.values()
+            if f.status == "detected" and f.value
+        ),
+        "merged_uncertain": sum(
+            1 for f in merged.values() if f.status == "uncertain"
+        ),
+    }
+    return merged, stats
+
+
+def _diagnostic_entry(entry: Optional[ProductField]) -> Dict[str, Any]:
+    safe = _entry(entry)
+    value = safe.value
+    if value and len(str(value)) > 80:
+        value = f"{str(value)[:77]}..."
+    return {
+        "status": safe.status,
+        "source": safe.source,
+        "confidence": safe.confidence,
+        "value": value,
+    }
+
+
+def build_field_diagnostic(
+    ocr: Any,
+    gemini: Dict[str, ProductField],
+    merged: Dict[str, ProductField],
+    **context: Any,
+) -> Dict[str, Any]:
+    """Return a per-field diagnostic (OCR vs Gemini vs final) for a scan.
+
+    Intended for structured ``[PACKINTEL][DIAGNOSTIC]`` log lines so every
+    field can be traced from each extractor through to the value used for
+    compliance, without leaking the raw OCR text.
+    """
+    if ocr is None:
+        ocr_fields: Dict[str, ProductField] = {}
+    elif hasattr(ocr, "as_dict"):
+        ocr_fields = ocr.as_dict()
+    else:
+        ocr_fields = ocr or {}
+
+    fields: Dict[str, Any] = {}
+    for key in PRODUCT_FIELDS:
+        fields[key] = {
+            "ocr": _diagnostic_entry(ocr_fields.get(key)),
+            "gemini": _diagnostic_entry(gemini.get(key)),
+            "merged": _diagnostic_entry(merged.get(key)),
+        }
+
+    return {"context": context, "fields": fields}

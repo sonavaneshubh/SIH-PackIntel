@@ -313,7 +313,10 @@ def test_date_context_distinguishes_mfg_pkd_best_before(monkeypatch):
     pi = scan(Image.new("RGB", (600, 600), "white")).json()["product_information"]
 
     assert pi["manufacturing_date"]["value"] == "01/2026"
-    assert pi["packing_date"]["status"] == "not_visible"
+    # Gemini reported no separate packing date, but the OCR pipeline's
+    # month/year-of-packing copy back-fills the only printed figure (MFD
+    # 01/2026). The merge preserves that OCR value instead of dropping it.
+    assert pi["packing_date"]["value"] == "01/2026"
     assert pi["expiry_date"]["value"] == "6 months from packaging"
 
 

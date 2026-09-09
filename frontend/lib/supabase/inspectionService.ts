@@ -911,6 +911,20 @@ export async function saveExtractedLabel(
         ...data,
       });
 
+      if (normalized) {
+        const pi = normalized.product_information;
+        const detectedCount = pi && typeof pi === 'object'
+          ? Object.values(pi).filter(
+              (entry) =>
+                entry && typeof entry === 'object' && (entry as any).status === 'detected' && !!((entry as any).value != null)
+            ).length
+          : 0;
+        console.debug(
+          `[PACKINTEL][DATABASE] saveExtractedLabel inspection=${payload.inspection_id} ` +
+            `detected_fields=${detectedCount} importer=${payload.importer_name || null}`
+        );
+      }
+
       return {
         data: normalized,
         error: null,

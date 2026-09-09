@@ -5,7 +5,14 @@ import {
   InspectionImage,
   ExtractedField,
 } from '@/types/database';
-import { CORE_LEGAL_METROLOGY_FIELDS, PRODUCT_FIELDS, ProductField, parseProductInformation } from '@/types/product';
+import {
+  CORE_LEGAL_METROLOGY_FIELDS,
+  PRODUCT_FIELDS,
+  ProductField,
+  ProductInformation,
+  ProductFieldSource,
+  parseProductInformation,
+} from '@/types/product';
 
 export interface ComplianceResultWithRule extends ComplianceResultRow {
   rule_id?: string;
@@ -178,6 +185,39 @@ export interface PopulatedField {
   field: ProductField;
 }
 
+// The report's core grid uses display keys that differ from the canonical
+// schema keys for a few historically legacy-mapped fields. Without this map
+// a fully-detected canonical value is silently shown as "Not Detected".
+const FIELD_KEY_MAP: Record<string, string> = {
+  commodity_name: 'brand_or_commodity_name',
+  best_before_date: 'expiry_date',
+};
+
+// Consumer-care can be stored as separate canonical fields (phone / toll-free /
+// email) or as the single legacy consumer_care_details value. Compose the
+// canonical pieces so a real contact block is never reported as missing.
+export function composedCareField(productInformation: ProductInformation): ProductField | null {
+  const careKeys: Array<'customer_care_phone' | 'toll_free_number' | 'customer_care_email'> = [
+    'customer_care_phone',
+    'toll_free_number',
+    'customer_care_email',
+  ];
+  const parts: Array<{ value: string; confidence: number; source: ProductFieldSource }> = [];
+  for (const key of careKeys) {
+    const entry = productInformation[key];
+    if (isField(entry) && entry.status === 'detected' && entry.value) {
+      parts.push({ value: entry.value, confidence: entry.confidence, source: entry.source });
+    }
+  }
+  if (!parts.length) return null;
+  return {
+    value: parts.map((p) => p.value).join(' | '),
+    status: 'detected',
+    confidence: Math.max(...parts.map((p) => p.confidence)),
+    source: 'merged',
+  } as ProductField;
+}
+
 export function sourceLabel(source?: string) {
   if (source === 'gemini_vision') return 'Gemini Vision';
   if (source === 'vision') return 'Vision';
@@ -193,9 +233,46 @@ export function buildPopulatedFields(
   label: ExtractedLabel | null,
   productInformation: ReturnType<typeof parseProductInformation>
 ): PopulatedField[] {
-  return CORE_LEGAL_METROLOGY_FIELDS.map(({ key: fieldKey, label: name }) => {
-    const canonical = productInformation[fieldKey] || productInformation[fieldKey === 'commodity_name' ? 'brand_or_commodity_name' : fieldKey];
-    const field = isField(canonical) ? canonical : legacyProductField(fieldKey, inspection, label);
+  const populated = CORE_LEGAL_METROLOGY_FIELDS.map(({ key: fieldKey, label: name }) => {
+    const canonicalKey = fieldKey === 'consumer_care_details'
+      ? undefined
+      : (FIELD_KEY_MAP[fieldKey] || fieldKey);
+    const canonical = canonicalKey ? productInformation[canonicalKey] : undefined;
+    const field = isField(canonical)
+      ? canonical
+      : fieldKey === 'consumer_care_details'
+        ? composedCareField(productInformation) || legacyProductField(fieldKey, inspection, label)
+        : legacyProductField(fieldKey, inspection, label);
     return { name, key: fieldKey, field };
   });
+
+  if (typeof console !== 'undefined') {
+    const detected = populated.filter((p) => p.field.status === 'detected' && p.field.value).length;
+    const sourceBreakdown = populated.reduce<Record<string, number>>((acc, p) => {
+      acc[p.field.source] = (acc[p.field.source] || 0) + 1;
+      return acc;
+    }, {});
+    console.debug(
+      `[PACKINTEL][REPORT] populated core fields detected=${detected}/${populated.length}`,
+      { sourceBreakdown }
+    );
+  }
+  return populated;
 }
+
+// Non-core declarations the extractors may detect (batch, FSSAI, veg marks,
+// marketer, certificates, packing date, contact email/name). These are not
+// part of the 16-field core grid but must still be surfaced on the report.
+export const SUPPLEMENTARY_DECLARATIONS: ReadonlyArray<{ key: string; label: string }> = [
+  { key: 'packing_date', label: 'Packing Date' },
+  { key: 'batch_number', label: 'Batch / Lot Number' },
+  { key: 'fssai_number', label: 'FSSAI License Number' },
+  { key: 'vegetarian_mark', label: 'Vegetarian Mark' },
+  { key: 'non_vegetarian_mark', label: 'Non-Vegetarian Mark' },
+  { key: 'marketer_name', label: 'Marketer Name' },
+  { key: 'marketer_address', label: 'Marketer Address' },
+  { key: 'toll_free_number', label: 'Toll Free Number' },
+  { key: 'customer_care_name', label: 'Customer Care Name' },
+  { key: 'customer_care_email', label: 'Customer Care Email' },
+  { key: 'certifications', label: 'Certifications' },
+];

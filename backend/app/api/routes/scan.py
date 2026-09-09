@@ -1,6 +1,7 @@
 import json
 import logging
 import uuid
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
 
@@ -27,7 +28,7 @@ from app.services.image_validation import (
     to_public_url,
     validate_upload,
 )
-from app.services.merge_service import merge_sources
+from app.services.merge_service import merge_sources, merge_gemini_with_ocr, build_field_diagnostic
 from app.services.ocr_service import OCRService, get_ocr_service
 from app.services.package_detector import detect_food_package, DetectionResult
 from app.services.vision_service import (
@@ -36,6 +37,7 @@ from app.services.vision_service import (
     should_use_vision_fallback,
 )
 from app.services.gemini_vision import GeminiVisionService, _average_detected_confidence
+from app.services.product_extractor import apply_pipeline_overlays
 from app.api.dependencies import get_current_user
 
 router = APIRouter()
@@ -201,6 +203,16 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
         front_result.get("image_quality", "unknown"),
         ocr_failed,
     )
+    logger.info(
+        "[PACKINTEL][OCR] engine=%s sides=%d text_len=%d confidence=%s "
+        "failed=%s quality=%s",
+        front_result.get("engine", "unknown"),
+        len(per_side),
+        len(extraction_text),
+        ocr_confidence,
+        ocr_failed,
+        front_result.get("image_quality", "unknown"),
+    )
     log_memory("scan:ocr_done")
 
     # ---- Gemini Vision (image) PRIMARY extraction ---------------------------
@@ -215,21 +227,68 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
     )
     if gemini_image_used:
         gemini_product_fields = gemini_vision_result.product_fields
+        gemini_detected = sum(
+            1
+            for f in gemini_product_fields.values()
+            if f.status == "detected" and f.value
+        )
         logger.info(
             "GEMINI: vision (image) extraction success, %d fields detected",
-            sum(
-                1
-                for f in gemini_product_fields.values()
-                if f.status == "detected" and f.value
-            ),
+            gemini_detected,
         )
-        final_info: Dict[str, ProductField] = {
-            k: gemini_product_fields[k] for k in PRODUCT_FIELDS
-        }
+        logger.info(
+            "[PACKINTEL][GEMINI][IMAGE] model=%s success=true detected=%d "
+            "quality=%s readability=%s",
+            settings.VISION_MODEL,
+            gemini_detected,
+            getattr(gemini_vision_result, "image_quality", "FAIR"),
+            getattr(gemini_vision_result, "readability_quality", "MEDIUM"),
+        )
+
+        # The Gemini image pass only sees the FRONT side, so declarations
+        # printed on the BACK (importer block, batch/FSSAI, expiry, veg marks)
+        # can be missed by Gemini. The OCR-pipeline extraction therefore always
+        # runs over the combined front+back OCR text, and OCR fills exactly the
+        # fields Gemini left not_visible. Gemini stays the primary source and
+        # only missing values are back-filled — never overwritten.
+        try:
+            ocr_info, _ocr_conf = AIService.extract_product_information(
+                extraction_text, ocr_confidence=ocr_confidence
+            )
+            ocr_info = apply_pipeline_overlays(ocr_info, extraction_text)
+        except Exception as exc:  # pragma: no cover - defense in depth
+            logger.warning(
+                "[PACKINTEL][OCR] regex extraction failed, ignoring: %s", exc
+            )
+            ocr_info = None
+
+        final_info, merge_stats = merge_gemini_with_ocr(
+            ocr_info, gemini_product_fields
+        )
+        if ocr_info is not None:
+            logger.info(
+                "[PACKINTEL][MERGE] primary=gemini_vision stats=%s",
+                json.dumps(merge_stats, sort_keys=True),
+            )
+            logger.info(
+                "[PACKINTEL][DIAGNOSTIC] %s",
+                json.dumps(
+                    build_field_diagnostic(
+                        ocr_info,
+                        gemini_product_fields,
+                        final_info,
+                        extraction_source="gemini_vision",
+                    ),
+                    sort_keys=True,
+                    default=str,
+                ),
+            )
         extraction_source = "gemini_vision"
         vision_used = True
-        extraction_conf = {"overall": _average_detected_confidence(gemini_product_fields)}
-        logger.info("COMPLIANCE: using Gemini Vision (image) extraction results")
+        extraction_conf = {"overall": _average_detected_confidence(final_info)}
+        logger.info(
+            "COMPLIANCE: using Gemini Vision (image) extraction merged with OCR gaps"
+        )
     else:
         # ---- OCR-first fallback flow ----------------------------------------
         if settings.GEMINI_PRIMARY_ENABLED:
@@ -280,8 +339,6 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
             # Apply deterministic extraction improvements (addresses, dates, unit sale
             # price) from the dedicated product extractor layer. These only fill fields
             # the regex extraction could not, so they never regress detected values.
-            from app.services.product_extractor import apply_pipeline_overlays
-
             try:
                 ocr_info = apply_pipeline_overlays(ocr_info, extraction_text)
             except Exception as exc:  # pragma: no cover - defense in depth
@@ -328,6 +385,17 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
         image_quality=front_result.get("image_quality", "usable"),
     )
     logger.info("Compliance analysis completed: overall=%s, score=%d", compliance.overall_result, compliance.compliance_score)
+    rule_state = Counter(r.status for r in compliance.results)
+    logger.info(
+        "[PACKINTEL][COMPLIANCE] overall=%s score=%d passed=%d failed=%d "
+        "uncertain=%d not_applicable=%d",
+        compliance.overall_result,
+        compliance.compliance_score,
+        rule_state.get("PASS", 0),
+        rule_state.get("FAIL", 0),
+        rule_state.get("UNCERTAIN", 0),
+        rule_state.get("NOT_APPLICABLE", 0),
+    )
     overall_result = compliance.overall_result
     score = compliance.compliance_score
     compliance_score = compliance.compliance_score
@@ -372,6 +440,18 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
         result_status,
         score,
         overall_result,
+        front_result.get("engine", "unknown"),
+        len(per_side),
+    )
+    logger.info(
+        "[PACKINTEL][SCAN] id=%s status=%s score=%s overall=%s "
+        "extraction_source=%s vision_used=%s engine=%s parts=%d",
+        inspection_id,
+        result_status,
+        score,
+        overall_result,
+        extraction_source,
+        vision_used,
         front_result.get("engine", "unknown"),
         len(per_side),
     )
@@ -759,7 +839,7 @@ def _flat_extraction(product_information: Dict[str, ProductField]) -> Dict[str, 
     return {
         "manufacturer_name": value("manufacturer_name"),
         "packer_name": value("packer_name"),
-        "importer_name": None,
+        "importer_name": value("importer_name"),
         "commodity_name": value("brand_or_commodity_name"),
         "common_generic_name": value("generic_name", "brand_or_commodity_name"),
         "net_quantity": value("net_quantity"),
