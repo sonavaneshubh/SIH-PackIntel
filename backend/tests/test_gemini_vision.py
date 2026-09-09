@@ -55,9 +55,13 @@ def make_fields(**values):
 
 
 def stub_gemini(monkeypatch, *, success=True, error=None, **values) -> None:
-    """Replace GeminiVisionService.extract_from_text with a canned result (no network)."""
+    """Replace Gemini Vision (image) and Gemini-from-text with canned results.
 
-    def fake_extract(combined_text, front_text=None, back_text=None):
+    Patching both entry points keeps the fallback tests deterministic no
+    matter which path the pipeline reaches (image-primary or text-fallback).
+    """
+
+    def canned():
         return GeminiVisionResult(
             success=success,
             product_fields=make_fields(**values) if success else {},
@@ -69,7 +73,14 @@ def stub_gemini(monkeypatch, *, success=True, error=None, **values) -> None:
             error=error,
         )
 
-    monkeypatch.setattr(GeminiVisionService, "extract_from_text", staticmethod(fake_extract))
+    def fake_extract(image_ref, pil_image=None):
+        return canned()
+
+    def fake_extract_text(combined_text, front_text=None, back_text=None):
+        return canned()
+
+    monkeypatch.setattr(GeminiVisionService, "extract", staticmethod(fake_extract))
+    monkeypatch.setattr(GeminiVisionService, "extract_from_text", staticmethod(fake_extract_text))
 
 
 def stub_ocr_text(monkeypatch, text: str) -> None:
@@ -409,7 +420,7 @@ def test_poor_image_still_produces_report(monkeypatch):
     enable_gemini_primary(monkeypatch)
     stub_ocr_text(monkeypatch, "Snacks\nNet Quantity 200 g\nMRP Rs. 120")
 
-    def fake_extract(combined_text, front_text=None, back_text=None):
+    def fake_extract(image_ref, pil_image=None, **kwargs):
         return GeminiVisionResult(
             success=True,
             product_fields=make_fields(mrp="Rs. 120", net_quantity="200 g"),
@@ -420,7 +431,7 @@ def test_poor_image_still_produces_report(monkeypatch):
             confidence_details={"overall_visual_confidence": 35},
         )
 
-    monkeypatch.setattr(GeminiVisionService, "extract_from_text", staticmethod(fake_extract))
+    monkeypatch.setattr(GeminiVisionService, "extract", staticmethod(fake_extract))
 
     data = scan(Image.new("RGB", (600, 600), (60, 60, 60))).json()
 
@@ -589,20 +600,20 @@ def test_real_image_problematic_label_is_mapped_correctly(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Pipeline-level: OCR first, then Gemini receives the OCR text
+# Pipeline-level: Gemini Vision reads the image directly (primary)
 # ---------------------------------------------------------------------------
 
 
-def test_gemini_receives_ocr_text_not_image(monkeypatch):
-    """The new flow always runs OCR first and passes the combined OCR text to
-    Gemini. Gemini must receive text, never the raw image."""
+def test_gemini_vision_image_is_primary(monkeypatch):
+    """Gemini Vision receives the FRONT IMAGE (not OCR text) and drives the
+    extraction whenever it succeeds. The OCR-text Gemini pass must never run
+    in this case, even though the OCR text is present."""
     enable_gemini_primary(monkeypatch)
 
     captured = {}
 
-    def fake_extract(combined_text, front_text=None, back_text=None):
-        captured["combined_text"] = combined_text
-        captured["front_text"] = front_text
+    def fake_extract(image_ref, pil_image=None):
+        captured["image_ref"] = image_ref
         returned = make_fields(
             mrp="Rs. 120",
             brand_or_commodity_name="Premium Rice",
@@ -615,9 +626,15 @@ def test_gemini_receives_ocr_text_not_image(monkeypatch):
             raw_extraction={},
             image_quality="GOOD",
             readability_quality="HIGH",
+            image_analysis={},
+            confidence_details={"overall_visual_confidence": 90},
         )
 
-    monkeypatch.setattr(GeminiVisionService, "extract_from_text", staticmethod(fake_extract))
+    def shake(*args, **kwargs):
+        raise AssertionError("OCR-text Gemini pass must not run when image Gemini succeeds")
+
+    monkeypatch.setattr(GeminiVisionService, "extract", staticmethod(fake_extract))
+    monkeypatch.setattr(GeminiVisionService, "extract_from_text", staticmethod(shake))
     stub_ocr_text(
         monkeypatch,
         "PREMIUM RICE\nNet Quantity 5 kg\nMRP Rs. 120 (Incl. of all taxes)\n"
@@ -627,9 +644,9 @@ def test_gemini_receives_ocr_text_not_image(monkeypatch):
     data = scan(Image.new("RGB", (600, 600), "white")).json()
 
     assert data["extraction_source"] == "gemini_vision"
+    assert data["vision_used"] is True
     assert data["product_information"]["mrp"]["value"] == "Rs. 120"
     assert data["product_information"]["brand_or_commodity_name"]["value"] == "Premium Rice"
-    # Gemini received the OCR text (not the image) — the combined text includes
-    # the label lines stubbed into the OCR engine.
-    assert "Net Quantity 5 kg" in captured["combined_text"]
-    assert captured["front_text"] is not None
+    assert data["product_information"]["net_quantity"]["value"] == "5 kg"
+    # Gemini received the image (data URI), not the OCR text.
+    assert captured["image_ref"].startswith("data:image")

@@ -131,21 +131,41 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
     front_layout_text = ""
     front_detection: Optional[ImageDetection] = None
 
-    # ---- OCR FIRST, GEMINI SECOND ------------------------------------------
-    # Every side is OCR'd (Google Cloud Vision -> Tesseract fallback). The raw
-    # OCR text from front + back is combined and THEN passed to Gemini for
-    # structured extraction. Gemini never performs OCR on the image here; it
-    # only consumes the text. If Gemini fails/malforms, the existing regex
-    # extraction (AIService + product_extractor overlays) is the fallback.
-    gemini_text_used = False
+    # ---- PIPELINE: GEMINI VISION PRIMARY, OCR-TEXT SECONDARY ---------------
+    # When GEMINI_PRIMARY_ENABLED, Gemini Vision reads the front image directly
+    # and returns structured label fields. It does NOT depend on Google Cloud
+    # Vision's OCR text, so garbled/empty OCR no longer blocks extraction. It
+    # is submitted to the same worker pool as detection/quality/OCR so it adds
+    # no serial latency while enabled.
+    #
+    # The OCR pass (Google Cloud Vision -> Tesseract) still runs for every
+    # side: its text/regions feed the response contract and the report. If
+    # Gemini Vision is disabled or yields nothing, the pipeline falls back to
+    # the OCR-first flow (combined text -> Gemini-from-text -> regex
+    # extraction -> optional multimodal vision fallback).
     gemini_product_fields: Optional[Dict[str, ProductField]] = None
+    gemini_vision_result: Optional[Any] = None
 
     # Detection/quality/OCR for multiple sides is CPU- and I/O-bound, so the
     # sides are processed in parallel. Outcomes keep the input ordering and the
     # first side always supplies the "front" response fields (same contract as
     # a sequential loop).
-    with ThreadPoolExecutor(max_workers=max(1, len(sides))) as pool:
+    front_ref = sides[0]["image_ref"] if sides else None
+    gemini_future = None
+    with ThreadPoolExecutor(max_workers=max(2, len(sides))) as pool:
+        if settings.GEMINI_PRIMARY_ENABLED and front_ref:
+            gemini_future = pool.submit(GeminiVisionService.extract, front_ref)
         processed = list(pool.map(_process_one_side, sides))
+
+    if gemini_future is not None:
+        try:
+            gemini_vision_result = gemini_future.result(
+                timeout=settings.VISION_TIMEOUT_SECONDS + 30
+            )
+        except Exception as exc:
+            logger.warning(
+                "GEMINI: vision extraction task failed, using fallback: %s", exc
+            )
 
     warnings.extend(
         warning
@@ -183,78 +203,109 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
     )
     log_memory("scan:ocr_done")
 
-    # ---- Gemini structured extraction from the combined OCR text ------------
+    # ---- Gemini Vision (image) PRIMARY extraction ---------------------------
     vision_used = False
     vision_error: Optional[str] = None
     extraction_conf: Dict[str, Any] = {"overall": 0.0}
 
-    if settings.GEMINI_PRIMARY_ENABLED and extraction_text:
-        logger.info("GEMINI: extraction started from combined OCR text")
-        back_text = per_side[1].ocr_raw_text if len(per_side) > 1 else ""
-        try:
-            _gemini_result = GeminiVisionService.extract_from_text(
-                extraction_text, front_text=front_ocr_text, back_text=back_text
-            )
-        except Exception as exc:
-            logger.warning("GEMINI: request failed, using fallback: %s", exc)
-            _gemini_result = None
-
-        if _gemini_result is not None and _gemini_result.success:
-            gemini_text_used = True
-            gemini_product_fields = _gemini_result.product_fields
-            logger.info("GEMINI: extraction success")
-        else:
-            logger.warning(
-                "GEMINI: extraction failed, using fallback: %s",
-                _gemini_result.error if _gemini_result else "unknown error",
-            )
-
-    if gemini_text_used and gemini_product_fields is not None:
-        # Gemini extracted structured fields from the OCR text — feed them
-        # straight into the compliance engine.
+    gemini_image_used = (
+        gemini_vision_result is not None
+        and gemini_vision_result.success
+        and gemini_vision_result.product_fields is not None
+    )
+    if gemini_image_used:
+        gemini_product_fields = gemini_vision_result.product_fields
+        logger.info(
+            "GEMINI: vision (image) extraction success, %d fields detected",
+            sum(
+                1
+                for f in gemini_product_fields.values()
+                if f.status == "detected" and f.value
+            ),
+        )
         final_info: Dict[str, ProductField] = {
             k: gemini_product_fields[k] for k in PRODUCT_FIELDS
         }
         extraction_source = "gemini_vision"
         vision_used = True
         extraction_conf = {"overall": _average_detected_confidence(gemini_product_fields)}
-        logger.info("COMPLIANCE: using Gemini extraction results")
+        logger.info("COMPLIANCE: using Gemini Vision (image) extraction results")
     else:
-        # ---- Canonical OCR extraction (regex) fallback ----------------------
-        logger.info("Analysis started (field extraction)")
-        ocr_info, extraction_conf = AIService.extract_product_information(
-            extraction_text, ocr_confidence=ocr_confidence
-        )
+        # ---- OCR-first fallback flow ----------------------------------------
+        if settings.GEMINI_PRIMARY_ENABLED:
+            logger.warning(
+                "GEMINI: vision (image) unavailable (%s); using OCR-text flow",
+                getattr(gemini_vision_result, "error", "not attempted"),
+            )
 
-        # Apply deterministic extraction improvements (addresses, dates, unit sale
-        # price) from the dedicated product extractor layer. These only fill fields
-        # the regex extraction could not, so they never regress detected values.
-        from app.services.product_extractor import apply_pipeline_overlays
-
-        try:
-            ocr_info = apply_pipeline_overlays(ocr_info, extraction_text)
-        except Exception as exc:  # pragma: no cover - defense in depth
-            logger.warning("Product-extractor overlay failed, keeping base output: %s", exc)
-
-        extraction_source = "ocr"
-        final_info = ocr_info.as_dict()
-        front_image_ref = sides[0]["image_ref"] if sides else None
-        if (
-            settings.ENABLE_VISION_FALLBACK
-            and front_image_ref
-            and should_use_vision_fallback(ocr_confidence, ocr_failed, ocr_info)
-        ):
+        gemini_text_used = False
+        if settings.GEMINI_PRIMARY_ENABLED and extraction_text:
+            logger.info("GEMINI: extraction started from combined OCR text")
+            back_text = per_side[1].ocr_raw_text if len(per_side) > 1 else ""
             try:
-                vision_fields = VisionService.extract(front_image_ref)
-                final_info = merge_sources(ocr_info, vision_fields)
-                vision_used = True
-                extraction_source = "ocr+vision" if front_ocr_text.strip() else "vision"
-            except VisionExtractionError as exc:
-                # Vision is an optional fallback: never destroy usable OCR results.
-                vision_error = str(exc)
-                logger.warning("Vision fallback unavailable: %s", exc)
-                final_info = ocr_info.as_dict()
-                extraction_source = "ocr"
+                _gemini_result = GeminiVisionService.extract_from_text(
+                    extraction_text, front_text=front_ocr_text, back_text=back_text
+                )
+            except Exception as exc:
+                logger.warning("GEMINI: request failed, using fallback: %s", exc)
+                _gemini_result = None
+
+            if _gemini_result is not None and _gemini_result.success:
+                gemini_text_used = True
+                gemini_product_fields = _gemini_result.product_fields
+                logger.info("GEMINI: extraction success")
+            else:
+                logger.warning(
+                    "GEMINI: extraction failed, using fallback: %s",
+                    _gemini_result.error if _gemini_result else "unknown error",
+                )
+
+        if gemini_text_used and gemini_product_fields is not None:
+            # Gemini extracted structured fields from the OCR text — feed them
+            # straight into the compliance engine.
+            final_info: Dict[str, ProductField] = {
+                k: gemini_product_fields[k] for k in PRODUCT_FIELDS
+            }
+            extraction_source = "gemini_vision"
+            vision_used = True
+            extraction_conf = {"overall": _average_detected_confidence(gemini_product_fields)}
+            logger.info("COMPLIANCE: using Gemini text extraction results")
+        else:
+            # ---- Canonical OCR extraction (regex) fallback ----------------------
+            logger.info("Analysis started (field extraction)")
+            ocr_info, extraction_conf = AIService.extract_product_information(
+                extraction_text, ocr_confidence=ocr_confidence
+            )
+
+            # Apply deterministic extraction improvements (addresses, dates, unit sale
+            # price) from the dedicated product extractor layer. These only fill fields
+            # the regex extraction could not, so they never regress detected values.
+            from app.services.product_extractor import apply_pipeline_overlays
+
+            try:
+                ocr_info = apply_pipeline_overlays(ocr_info, extraction_text)
+            except Exception as exc:  # pragma: no cover - defense in depth
+                logger.warning("Product-extractor overlay failed, keeping base output: %s", exc)
+
+            extraction_source = "ocr"
+            final_info = ocr_info.as_dict()
+            front_image_ref = sides[0]["image_ref"] if sides else None
+            if (
+                settings.ENABLE_VISION_FALLBACK
+                and front_image_ref
+                and should_use_vision_fallback(ocr_confidence, ocr_failed, ocr_info)
+            ):
+                try:
+                    vision_fields = VisionService.extract(front_image_ref)
+                    final_info = merge_sources(ocr_info, vision_fields)
+                    vision_used = True
+                    extraction_source = "ocr+vision" if front_ocr_text.strip() else "vision"
+                except VisionExtractionError as exc:
+                    # Vision is an optional fallback: never destroy usable OCR results.
+                    vision_error = str(exc)
+                    logger.warning("Vision fallback unavailable: %s", exc)
+                    final_info = ocr_info.as_dict()
+                    extraction_source = "ocr"
 
     product_information: Dict[str, ProductField] = {
         key: final_info[key] for key in PRODUCT_FIELDS

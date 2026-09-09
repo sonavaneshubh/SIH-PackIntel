@@ -1,26 +1,32 @@
-"""Gemini Vision: OCR-text product-field extraction.
+"""Gemini Vision: label-field extraction from images and OCR text.
 
-The service consumes the raw OCR text produced by Google Cloud Vision
-(front + back sides combined) and sends it to Gemini (via google-genai),
-requesting structured JSON per the canonical field schema, then validates and
-normalizes every value, and returns a ``GeminiVisionResult`` that can be fed
-directly into the compliance engine.
+Two entry points:
 
-Gemini never performs OCR on the image in this path. Extraction is driven by
-the text Gemini receives, so no value can be invented that is not supported by
-the OCR output. Images are only ever read by Google Cloud Vision (with the
-Tesseract fallback), keeping the image↔text responsibility separate.
+* ``extract(image_ref)`` sends the label IMAGE directly to Gemini (multimodal
+  vision) and returns structured product fields. This is the production
+  primary extractor when ``GEMINI_PRIMARY_ENABLED`` and is independent of
+  Google Cloud Vision — garbled/empty GCV OCR text cannot block extraction.
+* ``extract_from_text(combined_text)`` consumes the raw OCR text produced by
+  Google Cloud Vision (front + back combined) and requests structured JSON.
+  It is the fallback layer when image-based vision is disabled or fails.
+
+Both paths validate and normalize every value and return a
+``GeminiVisionResult`` that feeds directly into the compliance engine.
 
 If the Gemini call fails, times out, returns unusable JSON, or cannot extract
 any meaningful field, the caller should fall back to the existing
-Google Cloud Vision → text_normalizer → product_extractor path.
+Google Cloud Vision -> text_normalizer -> product_extractor path.
+
+Values are normalized (dates, phone numbers, FSSAI, quantity units, MRP) via
+the shared normalizers so the canonical schema stays consistent.
 
 Design
 ------
 * ``response_mime_type`` is set to ``application/json`` so the model returns
   valid JSON only.
 * Each extracted field carries: value, confidence (0-100), status, evidence
-  (the exact OCR text justifying the extraction), and ``source="gemini_vision"``.
+  (the exact text/region justifying the extraction), and
+  ``source="gemini_vision"``.
 * Nutrition values (Carbohydrate, Sugars, Protein …) are explicitly excluded
   from manufacturer/packer/net-quantity/MRP fields via prompt + validation.
 * VEG / vegetarian symbol is mapped only to ``vegetarian_mark``.

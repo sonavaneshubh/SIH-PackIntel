@@ -26,12 +26,14 @@ services:
       - key: VISION_PROVIDER
         value: gemini
       - key: VISION_MODEL
-        value: gemini-2.5-flash
+        value: gemini-3.6-flash
       - key: GEMINI_API_KEY
         sync: false
-      # Enable Gemini as the primary extraction engine (extracts structured
-      # fields directly from OCR text). Set to "true" once GEMINI_API_KEY is
-      # configured so the pipeline uses Gemini instead of regex extraction.
+      # Enable Gemini Vision as the primary extraction engine: it reads the
+      # label IMAGE directly (multimodal) and extracts structured fields,
+      # independent of Google Cloud Vision OCR. Set to "true" once
+      # GEMINI_API_KEY is configured so the pipeline uses Gemini first and
+      # only falls back to GCV OCR → regex when Gemini fails.
       - key: GEMINI_PRIMARY_ENABLED
         value: "true"
       # Optional: re-arm the Gemini image-vision fallback for low-confidence OCR.
