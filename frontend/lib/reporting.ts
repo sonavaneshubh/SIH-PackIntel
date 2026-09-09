@@ -239,3 +239,34 @@ export async function generateComplianceReport(
     };
   }
 }
+
+/**
+ * Downloads the inspection report PDF as a real file attachment.
+ *
+ * Uses the backend's streaming download endpoint (same origin policy as every
+ * other API call) and triggers the download from a same-origin Blob URL with a
+ * `download` attribute. Unlike navigating to the Supabase signed URL, this
+ * works reliably on mobile (Chrome for Android downloads the file, iOS Safari
+ * offers "Save to Files") and never opens the report in the SPA tab.
+ */
+export async function downloadInspectionReportPdf(
+  inspectionId: string,
+  fileName?: string
+): Promise<void> {
+  const { API_BASE_URL } = await import('@/lib/api');
+  const url = `${API_BASE_URL}/api/reports/download/${encodeURIComponent(inspectionId)}.pdf`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Report download failed (${response.status}).`);
+  }
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = fileName || `inspection-report-${inspectionId}.pdf`;
+  anchor.rel = 'noopener noreferrer';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+}

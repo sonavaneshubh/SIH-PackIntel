@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { supabase } from '@/lib/supabase/client';
 import { getSignedImageUrl, normalizeExtractedLabel } from '@/lib/supabase/inspectionService';
-import { api, API_BASE_URL } from '@/lib/api';
+import { api } from '@/lib/api';
 import {
   Inspection,
   ExtractedLabel,
@@ -26,6 +26,7 @@ import {
 } from './reportUtils';
 import { ProductFieldValue, QualityItem, ResultPill, SectionHeading, SummaryItem } from './reportComponents';
 import { buildReportTitle, reportBrandName, reportCompanyName, reportProductId } from '@/lib/reporting';
+import { downloadInspectionReportPdf } from '@/lib/reporting';
 import { cn } from '@/lib/utils';
 
 type LoadState = 'loading' | 'not_found' | 'error' | 'ready';
@@ -180,20 +181,13 @@ export function ReportView() {
       (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
         (navigator.maxTouchPoints > 0 && window.innerWidth < 768));
     if (isMobile && inspectionId) {
+      setReportMessage('Preparing your PDF report...');
       try {
-        const { download_url } = await api.generateReport({ inspection_id: inspectionId });
-        const url = download_url.startsWith('http')
-          ? download_url
-          : `${API_BASE_URL}${download_url}`;
-        const anchor = document.createElement('a');
-        anchor.href = url;
-        anchor.rel = 'noopener noreferrer';
-        document.body.appendChild(anchor);
-        anchor.click();
-        anchor.remove();
-        setReportMessage(
-          'Your PDF report download has started. If it did not start, open this page in Chrome for Android or Safari and use Share → Save to Files.'
-        );
+        // Persist the generated artifact first (keeps the stored report + audit trail),
+        // then stream the PDF as a real file download. Works on Chrome/Safari mobile.
+        const { report_id } = await api.generateReport({ inspection_id: inspectionId });
+        await downloadInspectionReportPdf(inspectionId, `${report_id}.pdf`);
+        setReportMessage('Your PDF report has been downloaded. Check your Downloads (or "Files" on iOS).');
         return;
       } catch {
         setReportMessage('Downloading the PDF failed. Using the browser’s print dialog instead.');

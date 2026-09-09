@@ -7,8 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { StatusBadge } from '@/components/ui/Badge';
 import { getMyComplianceReports } from '@/lib/supabase/inspectionService';
-import { buildComplianceReportRow, generateComplianceReport } from '@/lib/reporting';
-import { API_BASE_URL } from '@/lib/api';
+import { buildComplianceReportRow, downloadInspectionReportPdf, generateComplianceReport } from '@/lib/reporting';
 import { ComplianceReportSummary, JoinedInspection } from '@/types/report';
 import { cn } from '@/lib/utils';
 
@@ -84,20 +83,14 @@ export default function ReportsPage() {
     setDownloadMessage(null);
     try {
       const result = await generateComplianceReport(row.inspectionId);
-      if (result.error || !result.downloadUrl) {
-        throw new Error(result.error || 'Report generation did not return a download URL.');
+      if (result.error) {
+        throw new Error(result.error);
       }
-      const downloadUrl = result.downloadUrl.startsWith('http')
-        ? result.downloadUrl
-        : `${API_BASE_URL}${result.downloadUrl}`;
-      const anchor = document.createElement('a');
-      anchor.href = downloadUrl;
-      anchor.rel = 'noopener noreferrer';
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
+      // Stream the PDF as a real file (Blob + download attribute) so the
+      // download starts on both desktop and mobile browsers.
+      await downloadInspectionReportPdf(row.inspectionId, `${result.reportId}.pdf`);
       setDownloadMessage(
-        `Report ${result.reportId} generated for ${row.product.name || 'this product'}. If the download did not start, use the View action and pick Download PDF.`
+        `Report ${result.reportId} downloaded for ${row.product.name || 'this product'}.`
       );
     } catch (err) {
       setDownloadError(
