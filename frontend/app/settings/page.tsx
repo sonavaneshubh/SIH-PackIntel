@@ -19,7 +19,8 @@ type TabId =
   | 'notifications'
   | 'data_history'
   | 'security'
-  | 'system';
+  | 'system'
+  | 'contact_us';
 
 interface Tab {
   id: TabId;
@@ -75,6 +76,34 @@ const TABS: Tab[] = [
   { id: 'data_history', label: 'Data & History', icon: 'history' },
   { id: 'security', label: 'Security & Privacy', icon: 'security' },
   { id: 'system', label: 'System Information', icon: 'info' },
+  { id: 'contact_us', label: 'Contact Us', icon: 'contact_mail' },
+];
+
+const TECHNICAL_TEAM = [
+  {
+    name: 'Shubham Sonawane',
+    role: 'Backend & AI/GenAI Developer',
+    icon: 'data_object',
+    skills: ['FastAPI', 'OCR', 'Rule Engine', 'Supabase'],
+  },
+  {
+    name: 'Sandesh Kondikire',
+    role: 'Researcher & Frontend Developer',
+    icon: 'extension',
+    skills: ['Research', 'Frontend Development', 'Integration'],
+  },
+  {
+    name: 'Ranjit Rajiwade',
+    role: 'UI/UX Designer',
+    icon: 'design_services',
+    skills: ['UI Design', 'UX Design', 'User Experience'],
+  },
+  {
+    name: 'Sanskar Randive',
+    role: 'UI/UX Designer',
+    icon: 'palette',
+    skills: ['UI Design', 'UX Design', 'User Experience'],
+  },
 ];
 
 const STATUTORY_FIELDS = [
@@ -1270,6 +1299,60 @@ export default function SettingsPage() {
     </div>
   );
 
+  const renderContactUs = () => (
+    <div className="space-y-4">
+      <SectionCard title="Technical Team" description="Meet the engineers and designers behind PackIntel" icon="groups">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {TECHNICAL_TEAM.map(member => (
+            <div
+              key={member.name}
+              className="bg-surface-container-lowest border border-outline-variant rounded-xl p-4 shadow-xs flex flex-col gap-3"
+            >
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-[20px] text-primary">{member.icon}</span>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-on-surface truncate">{member.name}</p>
+                  <p className="text-[11px] font-medium text-primary mt-0.5">{member.role}</p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {member.skills.map(skill => (
+                  <span
+                    key={skill}
+                    className="px-2 py-0.5 rounded-full bg-primary/8 text-primary text-[10px] font-medium border border-primary/15"
+                  >
+                    {skill}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </SectionCard>
+
+      <div className="flex items-center justify-between gap-4 rounded-xl bg-primary/5 border border-primary/20 p-4">
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="material-symbols-outlined text-[20px] text-primary shrink-0">support_agent</span>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-on-surface">Need more help?</p>
+            <p className="text-[11px] text-on-surface-variant mt-0.5">
+              Visit the Compliance Helpdesk & Technical Support page.
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={() => window.open('/support', '_blank')}
+          className="flex shrink-0 items-center gap-1 text-xs text-primary hover:underline"
+        >
+          Open Helpdesk
+          <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+        </button>
+      </div>
+    </div>
+  );
+
   const tabContent: Record<TabId, React.ReactNode> = {
     profile: renderProfile(),
     verification: renderVerification(),
@@ -1280,6 +1363,7 @@ export default function SettingsPage() {
     data_history: renderDataHistory(),
     security: renderSecurity(),
     system: renderSystem(),
+    contact_us: renderContactUs(),
   };
 
   // ─── Render ────────────────────────────────────────────────────────────────
