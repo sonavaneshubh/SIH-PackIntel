@@ -2,7 +2,7 @@
 //
 // The Supabase JS client stores its session in localStorage (client-only), so
 // the auth flow mirrors the access token JWT into a `packintel_access_token`
-// cookie (and a `packintel_demo` marker for the local demo account). This
+// cookie. This
 // middleware decodes the JWT payload to read `user_metadata.role` and
 // `user_metadata.verification_status` and enforces the inspector-verification
 // lifecycle on every protected route:
@@ -12,6 +12,7 @@
 //   - pending (or missing status; the JWT may be stale vs the profiles table,
 //     and an unknown status is treated as pending for safety) → /verification-pending
 //   - rejected         → /verification-rejected
+//   - suspended        → /account-suspended
 //   - approved         → allowed through
 //
 // IMPORTANT: the JWT metadata is only a snapshot taken at sign-in. After the
@@ -25,11 +26,10 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const PUBLIC_ROUTES: Array<{ path: string; exact?: boolean }> = [
   { path: '/login', exact: true },
-  { path: '/signup', exact: true },
-  { path: '/forgot-password', exact: true },
-  { path: '/reset-password', exact: true },
   { path: '/verification-pending', exact: true },
+  { path: '/demo', exact: true },
   { path: '/verification-rejected', exact: true },
+  { path: '/account-suspended', exact: true },
   { path: '/access-denied', exact: true },
 ];
 
@@ -67,6 +67,14 @@ function isPublicRoute(pathname: string): boolean {
   );
 }
 
+// Allows a protected request through, but marks the response no-store so the
+// browser back button cannot reveal a cached authenticated page after logout.
+function allow(): NextResponse {
+  const response = NextResponse.next();
+  response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+  return response;
+}
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   if (isPublicRoute(pathname)) {
@@ -77,16 +85,6 @@ export function middleware(request: NextRequest) {
   // routes re-verify the admin role with the real JWT + database before any
   // privileged action, so this check is only a routing convenience layer.
   const isAdminRoute = pathname.startsWith('/admin');
-
-  // Demo account (local-only, its own marker cookie) is an approved inspector.
-  if (request.cookies.get('packintel_demo')?.value === '1') {
-    if (isAdminRoute) {
-      const url = request.nextUrl.clone();
-      url.pathname = '/access-denied';
-      return NextResponse.redirect(url);
-    }
-    return NextResponse.next();
-  }
 
   const token = request.cookies.get('packintel_access_token')?.value;
   const payload = decodeJwtPayload(token ? decodeURIComponent(token) : '');
@@ -118,13 +116,13 @@ export function middleware(request: NextRequest) {
       url.pathname = '/access-denied';
       return NextResponse.redirect(url);
     }
-    return NextResponse.next();
+    return allow();
   }
 
-  // Admins may access the full inspector workspace (matching the demo account,
-  // whose platformRole is 'admin'). Only unknown/other roles are denied.
+  // Admins may access the full inspector workspace. Only unknown/other roles
+  // are denied.
   if (role === 'admin') {
-    return NextResponse.next();
+    return allow();
   }
 
   if (role !== 'inspector') {
@@ -145,11 +143,17 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  return NextResponse.next();
+  if (verificationStatus === 'suspended') {
+    const url = request.nextUrl.clone();
+    url.pathname = '/account-suspended';
+    return NextResponse.redirect(url);
+  }
+
+  return allow();
 }
 
 export const config = {
-  // Protected app routes. Everything else (/, /login, /signup, public docs,
+  // Protected app routes. Everything else (/, /login, public docs,
   // static assets) is handled by Next.js defaults or client-side guards.
   matcher: [
     '/dashboard',
@@ -164,7 +168,5 @@ export const config = {
     '/support/:path*',
     '/inspector/:path*',
     '/admin/:path*',
-    '/privacy',
-    '/terms',
   ],
 };

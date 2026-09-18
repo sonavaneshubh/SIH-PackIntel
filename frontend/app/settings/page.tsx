@@ -216,11 +216,10 @@ function SaveBanner({ saved }: { saved: boolean }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
-  const { user, supabaseUser, session, signOut, updatePassword, isSupabaseConnected } = useAuth();
+  const { user, supabaseUser, session, signOut, isSupabaseConnected } = useAuth();
   const isAdmin =
     user?.platformRole === 'admin' ||
     ADMIN_ROLES.some(r => user?.role?.includes(r));
-  const isDemo = user?.isDemo ?? false;
 
   // Active tab
   const [activeTab, setActiveTab] = useState<TabId>('profile');
@@ -234,13 +233,6 @@ export default function SettingsPage() {
   const [profileEditing, setProfileEditing] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileMsg, setProfileMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  // Change Password Modal
-  const [pwdModalOpen, setPwdModalOpen] = useState(false);
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [pwdMsg, setPwdMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [pwdSaving, setPwdSaving] = useState(false);
 
   // Logout confirm
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
@@ -307,7 +299,6 @@ export default function SettingsPage() {
   const [verifMsg, setVerifMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [verifRejectingId, setVerifRejectingId] = useState<string | null>(null);
   const [verifRejectionReason, setVerifRejectionReason] = useState('');
-  const [verifResendId, setVerifResendId] = useState<string | null>(null);
 
   // ─── Effects ──────────────────────────────────────────────────────────────
 
@@ -351,33 +342,35 @@ export default function SettingsPage() {
     })();
   }, [isSupabaseConnected]);
 
-  // Load pending inspector verification requests (admin only)
+  // Load the inspector directory (admin only). Served from a service-role route
+  // so it does not depend on the self-referential profiles RLS admin policy.
   useEffect(() => {
     if (!isAdmin || !isSupabaseConnected) return;
     (async () => {
       setVerifLoading(true);
       setVerifMsg(null);
       try {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('id, full_name, email, designation, department, organization, location, phone, inspector_employee_id, employee_id, verification_token_hash, created_at')
-          .eq('verification_status', 'pending')
-          .or('role.in.(inspector),role.is.null')
-          .order('created_at', { ascending: false });
-        if (error) {
-          setVerifMsg({ type: 'error', text: `Failed to load verification requests: ${error.message}` });
+        const res = await fetch('/api/admin/inspectors', {
+          headers: { Authorization: `Bearer ${session?.access_token ?? ''}` },
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || !body.ok) {
+          setVerifMsg({ type: 'error', text: body?.error || 'Failed to load inspectors.' });
         } else {
-          setVerifications(data || []);
+          setVerifications(body.inspectors || []);
         }
       } catch (e: any) {
-        setVerifMsg({ type: 'error', text: e?.message || 'Failed to load verification requests.' });
+        setVerifMsg({ type: 'error', text: e?.message || 'Failed to load inspectors.' });
       } finally {
         setVerifLoading(false);
       }
     })();
-  }, [isAdmin, isSupabaseConnected]);
+  }, [isAdmin, isSupabaseConnected, session?.access_token]);
 
-  const handleVerificationAction = async (profileId: string, decision: 'approve' | 'reject') => {
+  const handleVerificationAction = async (
+    profileId: string,
+    decision: 'approve' | 'reject' | 'suspend' | 'reactivate'
+  ) => {
     if (!isSupabaseConnected || !isAdmin) return;
     if (decision === 'reject' && !verifRejectionReason.trim()) return;
     setVerifAction(profileId);
@@ -399,53 +392,28 @@ export default function SettingsPage() {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.ok) {
-        setVerifMsg({ type: 'error', text: body?.error || 'Failed to update verification status.' });
+        setVerifMsg({ type: 'error', text: body?.error || 'Failed to update authorization status.' });
         return;
       }
-      setVerifications(prev => prev.filter(v => v.id !== profileId));
+      const newStatus = body?.profile?.verificationStatus;
+      if (newStatus) {
+        setVerifications(prev =>
+          prev.map(v => (v.id === profileId ? { ...v, verification_status: newStatus } : v))
+        );
+      }
       setVerifRejectingId(null);
       setVerifRejectionReason('');
-      setVerifMsg({
-        type: 'success',
-        text: decision === 'approve'
-          ? 'Inspector approved. They can now sign in and access inspection tools.'
-          : 'Inspector rejected. They will see the rejection reason on sign in.',
-      });
+      const messages: Record<typeof decision, string> = {
+        approve: 'Inspector approved. They can now sign in and access inspection tools.',
+        reject: 'Inspector rejected. They will see the rejection reason on sign in.',
+        suspend: 'Inspector suspended. Their access has been revoked.',
+        reactivate: 'Inspector reactivated. They can sign in again.',
+      };
+      setVerifMsg({ type: 'success', text: messages[decision] });
     } catch {
-      setVerifMsg({ type: 'error', text: 'Network error. Failed to update verification status.' });
+      setVerifMsg({ type: 'error', text: 'Network error. Failed to update authorization status.' });
     } finally {
       setVerifAction(null);
-    }
-  };
-
-  const handleResendVerificationEmail = async (profileId: string) => {
-    if (!isSupabaseConnected || !isAdmin) return;
-    setVerifResendId(profileId);
-    setVerifMsg(null);
-    try {
-      const res = await fetch('/api/admin/resend', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${session?.access_token ?? ''}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ profileId }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body.ok) {
-        setVerifMsg({ type: 'error', text: body?.error || 'Failed to resend the admin email.' });
-        return;
-      }
-      setVerifMsg({
-        type: 'success',
-        text: body.delivered === false
-          ? 'A review link was regenerated, but email delivery failed (check email configuration).'
-          : 'Verification email resent. The link expires after 24 hours.',
-      });
-    } catch {
-      setVerifMsg({ type: 'error', text: 'Network error. Failed to resend the admin email.' });
-    } finally {
-      setVerifResendId(null);
     }
   };
 
@@ -512,36 +480,6 @@ export default function SettingsPage() {
     }
   };
 
-  const handlePasswordChange = async () => {
-    if (!newPassword || newPassword.length < 6) {
-      setPwdMsg({ type: 'error', text: 'Password must be at least 6 characters.' });
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setPwdMsg({ type: 'error', text: 'Passwords do not match.' });
-      return;
-    }
-    if (isDemo) {
-      setPwdMsg({ type: 'error', text: 'Password changes are not available in demo mode.' });
-      return;
-    }
-    setPwdSaving(true);
-    setPwdMsg(null);
-    const result = await updatePassword(newPassword);
-    if (result.success) {
-      setPwdMsg({ type: 'success', text: 'Password updated successfully.' });
-      setNewPassword('');
-      setConfirmPassword('');
-      setTimeout(() => {
-        setPwdModalOpen(false);
-        setPwdMsg(null);
-      }, 1500);
-    } else {
-      setPwdMsg({ type: 'error', text: result.error || 'Failed to update password.' });
-    }
-    setPwdSaving(false);
-  };
-
   const handleExportHistory = async () => {
     if (!isSupabaseConnected) {
       alert('Export requires a Supabase connection.');
@@ -588,10 +526,6 @@ export default function SettingsPage() {
       setClearDataMsg({ type: 'error', text: 'Type "DELETE ALL" exactly to confirm.' });
       return;
     }
-    if (isDemo) {
-      setClearDataMsg({ type: 'error', text: 'Cannot delete data in demo mode.' });
-      return;
-    }
     if (!isSupabaseConnected) {
       setClearDataMsg({ type: 'error', text: 'Supabase is not connected.' });
       return;
@@ -630,7 +564,7 @@ export default function SettingsPage() {
           </div>
           <div className="min-w-0">
             <p className="text-sm font-bold text-on-surface">{user?.name || 'Inspector'}</p>
-            <p className="text-xs text-on-surface-variant mt-0.5">{user?.email}</p>
+            <p className="text-xs text-on-surface-variant mt-0.5">{user?.inspectorEmployeeId || user?.email}</p>
             <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-semibold">
               <span className="material-symbols-outlined text-[12px]">verified_user</span>
               {user?.role || 'Inspector'}
@@ -656,10 +590,10 @@ export default function SettingsPage() {
             />
           </div>
           <div>
-            <label className="block text-[11px] font-semibold text-on-surface-variant uppercase tracking-wide mb-1">Email Address</label>
+            <label className="block text-[11px] font-semibold text-on-surface-variant uppercase tracking-wide mb-1">Inspector ID</label>
             <input
-              type="email"
-              value={user?.email || ''}
+              type="text"
+              value={user?.inspectorEmployeeId || '—'}
               disabled
               className="w-full px-3 py-2 text-sm bg-surface-container border border-outline-variant rounded-lg text-on-surface-variant opacity-60 cursor-not-allowed"
             />
@@ -707,26 +641,6 @@ export default function SettingsPage() {
         <div className="space-y-3">
           <div className="flex items-center justify-between py-2">
             <div>
-              <p className="text-xs font-semibold text-on-surface">Change Password</p>
-              <p className="text-[11px] text-on-surface-variant">Update your account password</p>
-            </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              icon="lock_reset"
-              disabled={isDemo}
-              onClick={() => { setPwdModalOpen(true); setPwdMsg(null); }}
-            >
-              Change Password
-            </Button>
-          </div>
-          {isDemo && (
-            <p className="text-[11px] text-on-surface-variant bg-surface-container-low px-3 py-2 rounded-lg">
-              Password management is disabled in demo mode.
-            </p>
-          )}
-          <div className="pt-3 border-t border-outline-variant flex items-center justify-between">
-            <div>
               <p className="text-xs font-semibold text-error">Sign Out</p>
               <p className="text-[11px] text-on-surface-variant">End your current session</p>
             </div>
@@ -766,7 +680,7 @@ export default function SettingsPage() {
 
     return (
       <div className="space-y-4">
-        <SectionCard title="Pending Inspector Registrations" description="Review and approve officer registration requests" icon="how_to_reg">
+        <SectionCard title="Inspector Authorization" description="Approve, reject, suspend or reactivate officer accounts" icon="how_to_reg">
           {verifMsg && (
             <div className={`mb-4 px-3 py-2 rounded-lg text-xs font-medium ${verifMsg.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-error-container text-on-error-container border border-error/20'}`}>
               {verifMsg.text}
@@ -781,65 +695,82 @@ export default function SettingsPage() {
           ) : verifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
               <span className="material-symbols-outlined text-[32px] text-green-600">task_alt</span>
-              <p className="text-sm font-semibold text-on-surface">No pending registrations</p>
-              <p className="text-xs text-on-surface-variant">All inspector accounts have been reviewed.</p>
+              <p className="text-sm font-semibold text-on-surface">No inspector accounts</p>
+              <p className="text-xs text-on-surface-variant">New officer registrations will appear here for review.</p>
             </div>
           ) : (
             <div className="space-y-3">
-              {verifications.map((v) => (
+              {verifications.map((v) => {
+                const status = (v.verification_status as string) || 'pending';
+                const statusStyle =
+                  status === 'approved'
+                    ? 'bg-green-50 text-green-700 border-green-200'
+                    : status === 'rejected'
+                      ? 'bg-error-container text-on-error-container border-error/20'
+                      : status === 'suspended'
+                        ? 'bg-red-50 text-red-700 border-red-200'
+                        : 'bg-amber-50 text-amber-700 border-amber-200';
+                const busy = verifAction !== null;
+                return (
                 <div key={v.id} className="rounded-xl border border-outline-variant bg-surface-container-lowest p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-sm font-bold text-on-surface truncate">{v.full_name || 'Unnamed Officer'}</p>
-                      <p className="text-[11px] text-on-surface-variant">{v.email}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-bold text-on-surface truncate">{v.full_name || 'Unnamed Officer'}</p>
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${statusStyle}`}>
+                          {status}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-on-surface-variant">Inspector ID: {v.inspector_employee_id || '—'}</p>
                       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-on-surface-variant">
                         <span><span className="font-semibold text-on-surface">Designation:</span> {v.designation || '—'}</span>
                         <span><span className="font-semibold text-on-surface">Dept:</span> {v.department || '—'}</span>
                         <span><span className="font-semibold text-on-surface">Org:</span> {v.organization || '—'}</span>
                         <span><span className="font-semibold text-on-surface">Location:</span> {v.location || '—'}</span>
-                        <span><span className="font-semibold text-on-surface">Inspector ID:</span> {v.inspector_employee_id || v.employee_id || '—'}</span>
                         <span><span className="font-semibold text-on-surface">Phone:</span> {v.phone || '—'}</span>
                       </div>
                       <p className="mt-2 text-[10px] text-outline">
                         Registered {v.created_at ? new Date(v.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
                       </p>
-                      {!v.verification_token_hash && (
-                        <p className="mt-2 flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
-                          <span className="material-symbols-outlined text-[12px]">mail_off</span>
-                          No review email has been issued for this registration yet. Approve below or use &ldquo;Resend email&rdquo; to issue a fresh link.
-                        </p>
-                      )}
                     </div>
                     <div className="flex shrink-0 flex-wrap gap-2">
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        icon="check"
-                        disabled={verifAction !== null || verifResendId !== null}
-                        onClick={() => handleVerificationAction(v.id, 'approve')}
-                      >
-                        {verifAction === v.id ? 'Saving…' : 'Approve'}
-                      </Button>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        icon="close"
-                        disabled={verifAction !== null || verifResendId !== null}
-                        onClick={() =>
-                          setVerifRejectingId(verifRejectingId === v.id ? null : v.id)
-                        }
-                      >
-                        Reject
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        icon="mail"
-                        disabled={verifAction !== null || verifResendId !== null}
-                        onClick={() => handleResendVerificationEmail(v.id)}
-                      >
-                        {verifResendId === v.id ? 'Sending…' : 'Resend email'}
-                      </Button>
+                      {status !== 'approved' && (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          icon="check"
+                          disabled={busy}
+                          onClick={() =>
+                            handleVerificationAction(v.id, status === 'suspended' ? 'reactivate' : 'approve')
+                          }
+                        >
+                          {verifAction === v.id ? 'Saving…' : status === 'suspended' ? 'Reactivate' : 'Approve'}
+                        </Button>
+                      )}
+                      {status === 'approved' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          icon="block"
+                          disabled={busy}
+                          onClick={() => handleVerificationAction(v.id, 'suspend')}
+                        >
+                          {verifAction === v.id ? 'Saving…' : 'Suspend'}
+                        </Button>
+                      )}
+                      {status !== 'rejected' && (
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          icon="close"
+                          disabled={busy}
+                          onClick={() =>
+                            setVerifRejectingId(verifRejectingId === v.id ? null : v.id)
+                          }
+                        >
+                          Reject
+                        </Button>
+                      )}
                     </div>
                   </div>
                   {verifRejectingId === v.id && (
@@ -884,7 +815,8 @@ export default function SettingsPage() {
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </SectionCard>
@@ -1196,17 +1128,12 @@ export default function SettingsPage() {
               variant="danger"
               size="sm"
               icon="delete_forever"
-              disabled={isDemo || !isSupabaseConnected}
+              disabled={!isSupabaseConnected}
               onClick={() => { setClearDataModalOpen(true); setClearDataMsg(null); }}
             >
               Clear All Data
             </Button>
           </SettingRow>
-          {isDemo && (
-            <p className="text-[11px] text-on-surface-variant mt-2">
-              Data deletion is disabled in demo mode.
-            </p>
-          )}
         </div>
       </SectionCard>
     </div>
@@ -1216,26 +1143,14 @@ export default function SettingsPage() {
     <div className="space-y-4">
       <SectionCard title="Session & Security" icon="lock">
         <InfoRow label="Session Status" value={user ? 'Active' : 'Inactive'} />
-        <InfoRow label="Authentication Provider" value={isDemo ? 'Demo (Local)' : 'Supabase Auth'} />
-        <InfoRow label="Session Type" value={isDemo ? 'Demo Inspector' : 'Authenticated User'} />
+        <InfoRow label="Authentication Provider" value="Supabase Auth" />
+        <InfoRow label="Session Type" value={user?.accessType === 'demo' ? 'Demo Inspector' : 'Authenticated User'} />
         <InfoRow label="User ID" value={user?.id ? `${user.id.slice(0, 8)}…` : '—'} mono />
-        {!isDemo && (
-          <div className="mt-4 pt-3 border-t border-outline-variant">
-            <Button
-              variant="secondary"
-              size="sm"
-              icon="lock_reset"
-              onClick={() => { setPwdModalOpen(true); setPwdMsg(null); }}
-            >
-              Change Password
-            </Button>
-          </div>
-        )}
       </SectionCard>
 
       <SectionCard title="Account Activity" icon="timeline">
         <InfoRow label="Last Login" value={new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} />
-        <InfoRow label="Login Method" value={isDemo ? 'Demo Account' : 'Email / Password'} />
+        <InfoRow label="Login Method" value="Inspector ID + One-Time Code" />
         <InfoRow label="Inspector Role" value={user?.role || '—'} />
         <InfoRow label="Department" value={user?.department || '—'} />
       </SectionCard>
@@ -1443,51 +1358,6 @@ export default function SettingsPage() {
 
       {/* ── Save Banner ─────────────────────────────────────────────────── */}
       <SaveBanner saved={saved} />
-
-      {/* ── Change Password Modal ────────────────────────────────────────── */}
-      <Modal
-        isOpen={pwdModalOpen}
-        onClose={() => { setPwdModalOpen(false); setPwdMsg(null); setNewPassword(''); setConfirmPassword(''); }}
-        title="Change Password"
-        subtitle="Enter a new password for your PackIntel account."
-        maxWidth="sm"
-        footer={
-          <>
-            <Button variant="outline" size="sm" onClick={() => setPwdModalOpen(false)}>Cancel</Button>
-            <Button variant="primary" size="sm" icon="lock_reset" onClick={handlePasswordChange} disabled={pwdSaving}>
-              {pwdSaving ? 'Saving…' : 'Update Password'}
-            </Button>
-          </>
-        }
-      >
-        {pwdMsg && (
-          <div className={`mb-3 px-3 py-2 rounded-lg text-xs font-medium ${pwdMsg.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-error-container text-on-error-container border border-error/20'}`}>
-            {pwdMsg.text}
-          </div>
-        )}
-        <div className="space-y-3">
-          <div>
-            <label className="block text-[11px] font-semibold text-on-surface-variant uppercase tracking-wide mb-1">New Password</label>
-            <input
-              type="password"
-              value={newPassword}
-              onChange={e => setNewPassword(e.target.value)}
-              placeholder="Minimum 6 characters"
-              className="w-full px-3 py-2 text-sm bg-surface-container-low border border-outline-variant rounded-lg text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-          </div>
-          <div>
-            <label className="block text-[11px] font-semibold text-on-surface-variant uppercase tracking-wide mb-1">Confirm New Password</label>
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={e => setConfirmPassword(e.target.value)}
-              placeholder="Repeat new password"
-              className="w-full px-3 py-2 text-sm bg-surface-container-low border border-outline-variant rounded-lg text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-          </div>
-        </div>
-      </Modal>
 
       {/* ── Logout Confirm Modal ─────────────────────────────────────────── */}
       <Modal

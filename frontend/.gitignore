@@ -1,0 +1,9 @@
+
+# Transient build-server artifacts (script output, pid) - never commit
+build-server.err
+build-server.log
+build-server.*.err
+build-server.*.log
+server.pid
+*.pid
+

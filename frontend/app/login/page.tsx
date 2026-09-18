@@ -1,6 +1,8 @@
 import React from 'react';
 import { Metadata } from 'next';
 import { LoginForm } from '@/components/auth/LoginForm';
+import { EvaluationDemoCard } from '@/components/auth/EvaluationDemoCard';
+import { HomeHeroPanel } from '@/components/auth/HomeHeroPanel';
 
 export const metadata: Metadata = {
   title: 'Inspector Sign In | PackIntel',
@@ -9,34 +11,26 @@ export const metadata: Metadata = {
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen bg-background flex flex-col justify-between items-center p-4 antialiased">
-      {/* Top Bar Header Banner */}
-      <header className="w-full max-w-5xl border-b border-outline-variant/60 py-3 text-body-sm font-body-sm text-on-surface-variant">
-        <div className="flex items-center gap-2 font-medium">
-          <span className="w-2 h-2 rounded-full bg-green-500" />
-          <span>Legal Metrology Compliance Enforcement Portal</span>
-        </div>
-        <div className="hidden sm:block text-body-sm font-mono text-outline">
-          Rule Engine v2.4.1 Active
-        </div>
-      </header>
+    <div className="relative min-h-screen w-full overflow-x-hidden bg-gradient-to-br from-[#F8FAFC] via-[#F8FDFC] to-[#F0FBF7] antialiased">
+      {/* Page-wide ambient glows using the Home Page palette */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+        <div className="absolute -left-32 -top-24 h-[26rem] w-[26rem] rounded-full bg-cyan-100/60 blur-3xl" />
+        <div className="absolute -right-24 top-1/3 h-96 w-96 rounded-full bg-[#EAF7FF] opacity-70 blur-3xl" />
+        <div className="absolute -bottom-28 left-1/3 h-96 w-96 rounded-full bg-emerald-100/70 blur-3xl" />
+      </div>
 
-      {/* Main Login Form Container */}
-      <main className="my-auto flex w-full items-center justify-center py-8 sm:py-10">
-        <LoginForm />
-      </main>
+      <div className="relative mx-auto flex min-h-screen w-full max-w-[1600px] flex-col lg:h-screen lg:min-h-0 lg:flex-row">
+        {/* Login card column — first on mobile, right on desktop */}
+        <div className="order-1 flex w-full flex-col items-center gap-6 px-4 py-6 sm:px-6 lg:order-2 lg:w-[42%] lg:justify-center lg:py-6 lg:pr-6">
+          <LoginForm />
+          <EvaluationDemoCard />
+        </div>
 
-      {/* Footer */}
-      <footer className="w-full max-w-5xl py-4 flex flex-col sm:flex-row justify-between items-center text-body-sm font-body-sm text-on-surface-variant border-t border-outline-variant/60 gap-2">
-        <div>
-          © 2024–2026 PackIntel • Department of Consumer Affairs, Government of India
+        {/* Home Page hero panel — left on desktop */}
+        <div className="order-2 w-full border-t border-[#E5F0FF] lg:order-1 lg:flex lg:w-[58%] lg:items-stretch lg:border-t-0 lg:border-r">
+          <HomeHeroPanel />
         </div>
-        <div className="flex flex-wrap items-center justify-center gap-1 sm:justify-end">
-          <span className="hover:text-on-surface transition-colors">Security & Privacy</span>
-          <span>•</span>
-          <span className="hover:text-on-surface transition-colors">Legal Metrology Act, 2009</span>
-        </div>
-      </footer>
+      </div>
     </div>
   );
 }

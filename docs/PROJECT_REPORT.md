@@ -74,8 +74,8 @@ Packaged (pre-packaged) commodities sold in India are governed by the **Legal Me
 | Page / Route | Purpose |
 |---|---|
 | `/` | Marketing / home landing |
-| `/login`, `/signup`, `/forgot-password`, `/reset-password` | Authentication |
-| `/verification-pending`, `/verification-rejected`, `/access-denied` | Account lifecycle / access control |
+| `/login` | Inspector ID + one-time-code authentication |
+| `/verification-pending`, `/verification-rejected`, `/account-suspended`, `/access-denied` | Account lifecycle / access control |
 | `/inspector/dashboard` | Authorized inspector workspace |
 | `/dashboard` | Main compliance dashboard |
 | `/scan/new`, `/scan/analyzing`, `/scan/ocr`, `/scan/declarations` | Package scanning pipeline (camera upload → AI analysis → declarations review) |
@@ -85,9 +85,8 @@ Packaged (pre-packaged) commodities sold in India are governed by the **Legal Me
 | `/analytics` | Compliance statistics & trends |
 | `/rules` | Legal Metrology rule database |
 | `/reports` | Generated report view / download |
-| `/settings` | App & engine settings (OCR, compliance thresholds, reports, notifications, admin approval/resend) |
+| `/settings` | App & engine settings (OCR, compliance thresholds, reports, notifications, admin authorization management) |
 | `/support`, `/privacy`, `/terms` | Info pages |
-| `/admin/inspector-verification/[token]` | Admin review of inspector registration |
 
 ---
 
@@ -137,9 +136,12 @@ All policies enforced via **Row Level Security (RLS)**: inspectors see only thei
 
 ## 9. Authentication & Access Control (Inspector Verification Lifecycle)
 
-- **Registration** → new profile created as `verification_status = pending` (via DB trigger + signup form).
-- **Admin approval email** → an email with **ACCEPT / REJECT** action buttons is sent to the configured admin.
-- Admin click invokes a **server API** (`/api/signup/verify-action`) that updates the `profiles` row (authoritative source) and syncs auth `user_metadata`.
+- **Three login methods, one identity** — the login screen offers (1) Inspector ID + password, (2) existing account email/Inspector ID + password, and (3) Inspector ID + one-time code. All three resolve to the same Supabase Auth user and the same `profiles` inspector.
+- **Password methods** → `POST /api/auth/login` resolves the identifier to the Supabase Auth email server-side (Inspector IDs map to a synthetic address), verifies the password with Supabase's own password grant, then authorizes from `profiles`. No password is ever stored by PackIntel.
+- **One-time code** → if the ID maps to an active inspector, a short-lived single-use code is issued (stored only as a salted hash). There is no self-registration.
+- **Session** → whichever method succeeds, the server returns Supabase tokens once and the client adopts them (`setSession`); authorization is always decided server-side.
+- **Demo account** → `DEMO-INS-001` is a pre-authorized *PackIntel demo inspector* (access_type = demo), not a government-issued identity. Its password is seeded from `DEMO_INSPECTOR_PASSWORD`; for the SIH build the one-time code can be surfaced on-screen (`DEMO_SHOW_OTP=true`) because no SMS/email gateway exists.
+- **Admin lifecycle** → admins approve / reject / suspend / reactivate inspectors from Settings; the `profiles` row is authoritative and auth `user_metadata` is synced.
 - **Route enforcement (server-side middleware)** decodes the access-token JWT:
   - no session → `/login`
   - role ≠ inspector → `/access-denied`
@@ -164,18 +166,20 @@ All policies enforced via **Row Level Security (RLS)**: inspectors see only thei
 | POST | `/api/compliance/check` | Legal Metrology rule compliance + risk score |
 | POST | `/api/reports/generate` | Generate PDF/JSON report |
 
-**Frontend server API routes:** `/api/signup/notify-admin`, `/api/signup/verify-action`, `/api/admin/verification/[token]`, `/api/admin/verify`, `/api/admin/resend` — handle the email-approval workflow.
+**Frontend server API routes:** `/api/auth/login` (Inspector ID or email + password), `/api/auth/request-otp` (validate Inspector ID + issue one-time code), `/api/auth/verify-otp` (verify code + mint session), `/api/admin/inspectors` (admin directory), `/api/admin/verify` (approve/reject/suspend/reactivate). Admin routes require a Supabase bearer token and re-verify administrator privileges server-side.
 
 ---
 
 ## 11. Recent Work / Feature Highlights (current sprint)
 
-1. **Direct email accept/reject approval** — Admin approves/rejects an inspector in one click from the email (no login needed), returns JSON; token is single-use, hashed, 24h expiry.
-2. **DB-authoritative login fix** — Removed the "approved user bounced to pending" bug; login now routes by the live `profiles` value.
-3. **Middleware security fix** — absent `verification_status` now blocks (pending) instead of silently allowing, closing a project-access bypass.
-4. **Legacy account data reconciliation** — approved the confirmed trusted/admin accounts; other pending users left blocked.
-5. **Pending-page UX** — polls DB, shows "Account Approved" + "Go to Login", sign-out before landing on login.
-6. **Sidebar updates** — Inspector Workspace placement, pending-account navigation.
+1. **Demo inspector authentication (three methods)** — Officers sign in with a pre-authorized Inspector ID + password, an existing account email/Inspector ID + password, or an Inspector ID + short-lived one-time code. All resolve to the same Supabase Auth user and inspector profile; there is no self-signup. Supabase Auth still uses a deterministic synthetic email internally for Inspector IDs.
+2. **Admin authorization lifecycle** — Admins approve, reject, suspend or reactivate inspectors from Settings. Suspend/reactivate also bans/unbans the Auth user so existing tokens cannot be refreshed.
+3. **DB-authoritative login fix** — Removed the "approved user bounced to pending" bug; login now routes by the live `profiles` value.
+4. **Middleware security fix** — absent `verification_status` now blocks (pending) instead of silently allowing, closing a project-access bypass.
+5. **Backend auth hardening** — protected FastAPI routes require a Supabase bearer token and enforce `role` + `verification_status`; frontend requests attach the token automatically.
+6. **Legacy account data reconciliation** — approved the confirmed trusted/admin accounts; other pending users left blocked.
+7. **Pending-page UX** — polls DB, shows "Account Approved" + "Go to Login", sign-out before landing on login.
+8. **Sidebar updates** — Inspector Workspace placement, pending-account navigation.
 
 ---
 

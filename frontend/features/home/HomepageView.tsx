@@ -457,12 +457,19 @@ function HowItWorksSection() {
       data-purpose="how-it-works-section"
       id="how-it-works"
     >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Heading */}
-        <h2 className="text-3xl font-extrabold text-slate-900">How It Works</h2>
-        <p className="text-sm sm:text-base text-slate-500 mt-2">Just 3 simple steps to ensure compliance.</p>
-        {/* Steps Grid */}
-        <div className="mt-14 grid grid-cols-1 md:grid-cols-3 gap-8 relative">
+        <div className="text-center">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-bold uppercase tracking-wider border border-blue-100">
+            End-to-End Workflow
+          </span>
+          <h2 className="mt-3 text-3xl font-extrabold text-slate-900">How It Works</h2>
+          <p className="text-sm sm:text-base text-slate-500 mt-2">
+            A complete 10-step AI inspection pipeline — from capture to the final compliance report.
+          </p>
+        </div>
+        {/* 10-Step Pipeline Grid */}
+        <div className="mt-14 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-5">
           {/* Step 1 */}
           <div className="flex flex-col items-center text-center space-y-4">
             <div className="flex items-center gap-3">
@@ -875,7 +882,7 @@ function FooterBanner() {
 
 export function HomepageView() {
   return (
-    <AppShell pageTitle="Home" noPadding>
+    <AppShell pageTitle="Home" noPadding allowGuest>
       <div
         className="bg-[#F8FAFC] text-slate-800 font-sans antialiased overflow-x-hidden"
         style={{ fontFamily: '"Plus Jakarta Sans", "Inter", sans-serif' }}

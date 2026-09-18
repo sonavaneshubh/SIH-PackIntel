@@ -176,11 +176,27 @@ export interface ReportGenerationResponse {
   generated_at: string;
 }
 
+// Attaches the caller's Supabase access token so the backend can authorize the
+// request against the authoritative profiles row. Dynamically imported so the
+// browser Supabase client is never pulled into a server bundle.
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  try {
+    const { supabase } = await import('@/lib/supabase/client');
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
+}
+
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+  const authHeaders = await getAuthHeaders();
   const response = await fetch(url, {
     headers: {
       'Content-Type': 'application/json',
+      ...authHeaders,
       ...options?.headers,
     },
     ...options,
@@ -212,7 +228,7 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
-  scanUpload: (
+  scanUpload: async (
     frontImage: File,
     backImage: File | null,
     metadata?: Partial<Omit<ScanRequest, 'image_url' | 'front_image_url' | 'back_image_url'>>,
@@ -228,7 +244,13 @@ export const api = {
         form.append(String(key), String(value));
       }
     });
-    return fetch(`${API_BASE_URL}/api/scan`, { method: 'POST', body: form }).then(ok<ScanResponse>);
+    const authHeaders = await getAuthHeaders();
+    const response = await fetch(`${API_BASE_URL}/api/scan`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: form,
+    });
+    return ok<ScanResponse>(response);
   },
 
   createInspection: (data: Record<string, unknown>): Promise<Record<string, unknown>> =>

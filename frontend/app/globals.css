@@ -258,6 +258,28 @@
   }
 }
 
+/* ── PackIntel Auth card float animation ─────────────────── */
+@keyframes auth-card-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.auth-card-float {
+  animation: auth-card-float 5s ease-in-out infinite;
+  will-change: transform;
+}
+
+/* Stop the gentle float while the user is interacting with a field */
+.auth-card-float:hover,
+.auth-card-float:focus-within {
+  animation-play-state: paused;
+}
+
 /* ── PackIntel Homepage entrance animations ─────────────── */
 @keyframes home-fade-up {
   from {
@@ -278,7 +300,9 @@
   .home-fade-up,
   .scanner-scan-line,
   .scanner-border-active,
-  .pulsing-dot {
+  .scanner-detected-glow,
+  .pulsing-dot,
+  .auth-card-float {
     animation: none !important;
   }
 }

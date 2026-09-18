@@ -5,11 +5,11 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/authContext';
 import { Button } from '@/components/ui/Button';
 
-export default function VerificationRejectedPage() {
+export default function AccountSuspendedPage() {
   const router = useRouter();
   const { user, signOut, isLoading } = useAuth();
 
-  const identifier = user?.inspectorEmployeeId || user?.name || 'your Inspector ID';
+  const identifier = user?.inspectorEmployeeId || user?.email || 'your Inspector ID';
 
   React.useEffect(() => {
     if (!isLoading && !user) {
@@ -22,7 +22,7 @@ export default function VerificationRejectedPage() {
       <header className="w-full max-w-5xl border-b border-outline-variant/60 py-3 text-body-sm font-body-sm text-on-surface-variant flex items-center justify-between">
         <div className="flex items-center gap-2 font-medium">
           <span className="w-2 h-2 rounded-full bg-red-500" />
-          <span>Account Verification Rejected</span>
+          <span>Account Suspended</span>
         </div>
         <div className="hidden sm:block text-body-sm font-mono text-outline">
           Rule Engine v2.4.1 Active
@@ -33,10 +33,10 @@ export default function VerificationRejectedPage() {
         <div className="relative w-full max-w-lg overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest p-6 shadow-[0_12px_32px_rgba(25,28,29,0.08)] sm:p-8">
           <div className="mb-8 flex flex-col items-center text-center">
             <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-xl border border-error/25 bg-error/10 text-error shadow-md">
-              <span className="material-symbols-outlined text-[32px]">gpp_bad</span>
+              <span className="material-symbols-outlined text-[32px]">block</span>
             </div>
             <h1 className="text-display-lg-mobile font-display-lg text-on-surface md:text-display-lg">
-              Verification Rejected
+              Access Suspended
             </h1>
             <p className="text-label-bold font-label-bold text-primary uppercase tracking-wider mt-0.5">
               PackIntel • Legal Metrology Platform
@@ -45,12 +45,13 @@ export default function VerificationRejectedPage() {
 
           <div className="flex items-start gap-2 px-4 py-3 rounded-lg border border-error/25 bg-error/10 text-body-sm font-body-sm text-on-surface">
             <span className="material-symbols-outlined text-[18px] text-error shrink-0 mt-0.5">
-              cancel
+              gpp_bad
             </span>
             <div>
-              <p className="font-semibold">Your inspector account registration was not approved.</p>
+              <p className="font-semibold">Your inspector account has been suspended by an administrator.</p>
               <p className="mt-1 text-on-surface-variant">
-                The account for <strong>{identifier}</strong> was rejected during the verification review.
+                Access for <strong>{identifier}</strong> has been temporarily revoked. Inspection tools are
+                unavailable while the account is suspended.
               </p>
             </div>
           </div>
@@ -60,8 +61,8 @@ export default function VerificationRejectedPage() {
               contact_support
             </span>
             <p>
-              If you believe this is an error, contact your administrator or the Legal Metrology
-              division with your Inspector ID to appeal or re-register.
+              If you believe this is an error, contact your administrator or the Legal Metrology division with
+              your Inspector ID to request reactivation.
             </p>
           </div>
 
@@ -70,14 +71,6 @@ export default function VerificationRejectedPage() {
               <Button
                 variant="primary"
                 className="flex-1 justify-center"
-                onClick={() => router.push('/login')}
-                icon="arrow_back"
-              >
-                Back to Sign In
-              </Button>
-              <Button
-                variant="outline"
-                className="flex-1 justify-center"
                 onClick={() => signOut()}
                 icon="logout"
               >
@@ -85,10 +78,6 @@ export default function VerificationRejectedPage() {
               </Button>
             </div>
           </div>
-
-          <p className="mt-5 text-center text-body-sm font-body-sm text-on-surface-variant">
-            Registration details cannot be edited here. Contact your administrator.
-          </p>
         </div>
       </main>
 

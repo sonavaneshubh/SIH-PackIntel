@@ -14,7 +14,7 @@ export default function VerificationPendingPage() {
   const { user, signOut, isLoading } = useAuth();
   const [status, setStatus] = React.useState<'pending' | 'approved' | 'rejected' | null>(null);
 
-  const email = user?.email || 'your registered email';
+  const identifier = user?.inspectorEmployeeId || user?.name || 'your Inspector ID';
 
   React.useEffect(() => {
     if (!isLoading && !user) {
@@ -154,7 +154,7 @@ export default function VerificationPendingPage() {
               <div>
                 <p className="font-semibold">Your inspector account registration was not approved.</p>
                 <p className="mt-1 text-on-surface-variant">
-                  The account for <strong>{email}</strong> was rejected during the verification review.
+                  The account for <strong>{identifier}</strong> was rejected during the verification review.
                 </p>
               </div>
             </div>
@@ -165,7 +165,7 @@ export default function VerificationPendingPage() {
               </span>
               <p>
                 If you believe this is an error, contact your administrator or the Legal Metrology
-                division with your registered email and Inspector / Employee ID to appeal or re-register.
+                division with your Inspector ID to appeal or re-register.
               </p>
             </div>
 
@@ -191,10 +191,7 @@ export default function VerificationPendingPage() {
             </div>
 
             <p className="mt-5 text-center text-body-sm font-body-sm text-on-surface-variant">
-              Need a new account?{' '}
-              <Link href="/signup" className="text-primary font-bold hover:underline">
-                Register with correct details
-              </Link>
+              Registration details cannot be edited here. Contact your administrator.
             </p>
           </div>
         </main>
@@ -240,8 +237,8 @@ export default function VerificationPendingPage() {
             <div>
               <p className="font-semibold">Your inspector account is awaiting administrator approval.</p>
               <p className="mt-1 text-on-surface-variant">
-                Registration for <strong>{email}</strong> has been submitted and a verification email has been
-                sent.
+                Registration for <strong>{identifier}</strong> has been submitted and is awaiting administrator
+                review.
               </p>
             </div>
           </div>
@@ -263,7 +260,7 @@ export default function VerificationPendingPage() {
 
           <div className="mt-6 pt-5 border-t border-outline-variant/60">
             <p className="text-body-sm font-body-sm text-on-surface-variant mb-4">
-              Need help or believe this is taking too long? Contact your administrator with your registered email.
+              Need help or believe this is taking too long? Contact your administrator with your Inspector ID.
             </p>
             <div className="flex flex-col sm:flex-row gap-3">
               <Button

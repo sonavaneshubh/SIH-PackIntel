@@ -7,6 +7,12 @@ class Settings(BaseSettings):
     VERSION: str = "1.0.0"
     API_V1_STR: str = "/api"
 
+    # Deployment environment. Used to decide whether authentication may fall
+    # back to a development identity when no Supabase project is configured.
+    # In "production" the backend fails closed instead of allowing anonymous
+    # access.
+    ENVIRONMENT: str = "development"
+
     SUPABASE_URL: str = "https://your-project-id.supabase.co"
     SUPABASE_SERVICE_ROLE_KEY: str = ""
     # Name of the Supabase Storage bucket used for compliance report artifacts.

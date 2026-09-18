@@ -50,7 +50,7 @@ export default function InspectorDashboardPage() {
             </div>
             <div className="min-w-0">
               <p className="text-sm font-bold text-on-surface truncate">{user?.name || 'Inspector'}</p>
-              <p className="text-xs text-on-surface-variant truncate">{user?.email}</p>
+              <p className="text-xs text-on-surface-variant truncate">{user?.inspectorEmployeeId || user?.email}</p>
             </div>
             <span className="ml-auto hidden sm:inline-flex items-center gap-1 px-2 py-1 rounded-full bg-green-500/10 text-green-700 text-[11px] font-semibold">
               <span className="material-symbols-outlined text-[14px]">verified_user</span>

@@ -359,7 +359,7 @@ export const TopNavBar = React.memo(function TopNavBar({
                       {user?.name || 'Compliance Officer'}
                     </p>
                     <p className="mt-0.5 truncate text-[11px] text-[#64748B]">
-                      {user?.email || 'inspector@packintel.gov'}
+                      {user?.inspectorEmployeeId || user?.email || 'inspector@packintel.gov'}
                     </p>
                     <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-[#EBF2FF] px-2 py-0.5 text-[10px] font-semibold text-[#1A73E8]">
                       <span className="material-symbols-outlined text-[12px]">badge</span>
