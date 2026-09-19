@@ -80,6 +80,7 @@ def stub_gemini(monkeypatch, *, success=True, error=None, **values) -> None:
         return canned()
 
     monkeypatch.setattr(GeminiVisionService, "extract", staticmethod(fake_extract))
+    monkeypatch.setattr(GeminiVisionService, "extract_multi", staticmethod(fake_extract))
     monkeypatch.setattr(GeminiVisionService, "extract_from_text", staticmethod(fake_extract_text))
 
 
@@ -543,7 +544,7 @@ def _problematic_label_image() -> Image.Image:
 def test_real_image_problematic_label_is_mapped_correctly(monkeypatch):
     """The label that previously produced
     Manufacturer: '& PACKED BY Carbohydrate 46.3g Total Suga₹ 128 Tasty Bites Snacks Pvt. Ltd'
-    and Brand: 'VEG' must now be extracted correctly. The Google Vision OCR
+    and Brand: 'VEG' must now be extracted correctly. The Tesseract OCR
     pass (stubbed here with the label text) feeds Gemini; Gemini only sees text."""
     enable_gemini_primary(monkeypatch)
     stub_ocr_text(
@@ -653,3 +654,162 @@ def test_gemini_vision_image_is_primary(monkeypatch):
     assert data["product_information"]["net_quantity"]["value"] == "5 kg"
     # Gemini received the image (data URI), not the OCR text.
     assert captured["image_ref"].startswith("data:image")
+
+
+# ---------------------------------------------------------------------------
+# Multi-image: FRONT + BACK are sent to Gemini together
+# ---------------------------------------------------------------------------
+
+
+def test_gemini_multi_image_front_and_back(monkeypatch):
+    """When both sides are present, Gemini receives both images in one call and
+    back-only declarations (importer block) are returned."""
+    enable_gemini_primary(monkeypatch)
+    stub_ocr_text(
+        monkeypatch,
+        "PREMIUM RICE\nNet Quantity 5 kg\nMRP Rs. 499 (Incl. of all taxes)",
+    )
+
+    captured = {}
+
+    def fake_extract_multi(image_refs, pil_images=None):
+        captured["refs"] = list(image_refs)
+        return GeminiVisionResult(
+            success=True,
+            product_fields=make_fields(
+                brand_or_commodity_name="Premium Rice",
+                net_quantity="5 kg",
+                mrp="Rs. 499",
+                importer_name="World Foods Ltd.",
+            ),
+            raw_extraction={},
+            image_quality="GOOD",
+            readability_quality="HIGH",
+            image_analysis={},
+            confidence_details={"overall_visual_confidence": 90},
+        )
+
+    monkeypatch.setattr(
+        GeminiVisionService,
+        "extract",
+        staticmethod(lambda *a, **kw: (_ for _ in ()).throw(
+            AssertionError("extract must not run when both sides are present")
+        )),
+    )
+    monkeypatch.setattr(GeminiVisionService, "extract_multi", staticmethod(fake_extract_multi))
+
+    front_uri = image_data_uri(Image.new("RGB", (600, 600), "white"))
+    back_uri = image_data_uri(Image.new("RGB", (700, 500), (230, 230, 230)))
+    response = client.post(
+        "/api/scan",
+        json={"front_image_url": front_uri, "back_image_url": back_uri},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["scan_completed"] is True
+    assert data["images_processed"] == 2
+    assert data["extraction_source"] == "gemini_vision"
+    assert data["vision_used"] is True
+    assert len(captured["refs"]) == 2
+    assert captured["refs"][0].startswith("data:image")
+    assert captured["refs"][1].startswith("data:image")
+    assert data["product_information"]["importer_name"]["value"] == "World Foods Ltd."
+
+
+def test_gemini_multi_image_failure_falls_back_to_ocr(monkeypatch):
+    """If the combined front+back Gemini call yields nothing, the scan still
+    completes via the OCR pipeline — never a crash."""
+    enable_gemini_primary(monkeypatch)
+    stub_ocr_text(
+        monkeypatch,
+        "PREMIUM RICE\nNet Quantity 5 kg\nMRP Rs. 499 (Incl. of all taxes)\n"
+        "Manufacturer: Acme Foods",
+    )
+    stub_gemini(monkeypatch, success=False, error="Gemini API error: 429 RESOURCE_EXHAUSTED")
+
+    response = client.post(
+        "/api/scan",
+        json={
+            "front_image_url": image_data_uri(Image.new("RGB", (600, 600), "white")),
+            "back_image_url": image_data_uri(Image.new("RGB", (700, 500), (230, 230, 230))),
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["scan_completed"] is True
+    assert data["images_processed"] == 2
+    assert data["vision_used"] is False
+    assert data["product_information"]["net_quantity"]["value"] == "5 kg"
+    assert data["score"] > 0
+
+
+# ---------------------------------------------------------------------------
+# Transient-error retry on the image path
+# ---------------------------------------------------------------------------
+
+
+def test_gemini_extract_retries_transient_503(monkeypatch):
+    """A transient 503 'high demand' is retried once and then succeeds."""
+    enable_gemini_primary(monkeypatch)
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "test-key-retry-503")
+
+    call_log = []
+
+    class _FakeModels:
+        def generate_content(self, model, contents, config=None):
+            call_log.append(model)
+            if len(call_log) == 1:
+                raise Exception("503 UNAVAILABLE: model currently experiencing high demand")
+            return _FakeResponse()
+
+    class _FakeResponse:
+        text = json.dumps(
+            {"mrp": {"value": "Rs. 120", "confidence": 90, "status": "detected", "evidence": "MRP Rs. 120"}}
+        )
+
+    class _FakeClient:
+        def __init__(self, api_key=None, http_options=None):
+            self.models = _FakeModels()
+
+    import app.services.gemini_vision as gemini_vision_module
+
+    monkeypatch.setattr(gemini_vision_module.genai, "Client", _FakeClient)
+
+    result = GeminiVisionService.extract(
+        image_data_uri(Image.new("RGB", (10, 10), "white"))
+    )
+
+    assert result.success is True
+    assert result.product_fields["mrp"].value == "Rs. 120"
+    assert len(call_log) == 2  # first attempt 503, second succeeded
+
+
+def test_gemini_extract_does_not_retry_fatal_errors(monkeypatch):
+    """Fatal 4xx errors are not retried."""
+    enable_gemini_primary(monkeypatch)
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "test-key-no-retry")
+
+    call_log = []
+
+    class _FakeModels:
+        def generate_content(self, model, contents, config=None):
+            call_log.append(model)
+            raise Exception("400 INVALID_ARGUMENT: bad request")
+
+    class _FakeClient:
+        def __init__(self, api_key=None, http_options=None):
+            self.models = _FakeModels()
+
+    import app.services.gemini_vision as gemini_vision_module
+
+    monkeypatch.setattr(gemini_vision_module.genai, "Client", _FakeClient)
+
+    result = GeminiVisionService.extract(
+        image_data_uri(Image.new("RGB", (10, 10), "white"))
+    )
+
+    assert result.success is False
+    assert "Gemini API error" in (result.error or "")
+    assert len(call_log) == 1

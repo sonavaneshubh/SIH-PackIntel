@@ -1,21 +1,23 @@
 """Gemini Vision: label-field extraction from images and OCR text.
 
-Two entry points:
+Three entry points:
 
 * ``extract(image_ref)`` sends the label IMAGE directly to Gemini (multimodal
   vision) and returns structured product fields. This is the production
   primary extractor when ``GEMINI_PRIMARY_ENABLED`` and is independent of
-  Google Cloud Vision — garbled/empty GCV OCR text cannot block extraction.
+  local OCR — garbled/empty Tesseract text cannot block extraction.
+* ``extract_multi(image_refs)`` sends the FRONT and BACK images together in
+  one Gemini request so back-only declarations are seen by the vision pass.
 * ``extract_from_text(combined_text)`` consumes the raw OCR text produced by
-  Google Cloud Vision (front + back combined) and requests structured JSON.
-  It is the fallback layer when image-based vision is disabled or fails.
+  Tesseract (front + back combined) and requests structured JSON. It is the
+  fallback layer when image-based vision is disabled or fails.
 
-Both paths validate and normalize every value and return a
+Both view paths validate and normalize every value and return a
 ``GeminiVisionResult`` that feeds directly into the compliance engine.
 
 If the Gemini call fails, times out, returns unusable JSON, or cannot extract
 any meaningful field, the caller should fall back to the existing
-Google Cloud Vision -> text_normalizer -> product_extractor path.
+Tesseract OCR -> text_normalizer -> product_extractor path.
 
 Values are normalized (dates, phone numbers, FSSAI, quantity units, MRP) via
 the shared normalizers so the canonical schema stays consistent.
@@ -39,7 +41,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field as dc_field
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from PIL import Image
 
@@ -606,27 +608,18 @@ class GeminiVisionService:
         model_name = settings.VISION_MODEL.strip()
 
         # ---- Call Gemini ----
-        try:
-            with httpx.Client(timeout=settings.VISION_TIMEOUT_SECONDS) as http_client:
-                client = genai.Client(
-                    api_key=api_key,
-                    http_options=types.HttpOptions(httpx_client=http_client),
-                )
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=[
-                        pil_image,
-                        "Extract the packaged commodity label fields as JSON per the schema above.",
-                    ],
-                    config=types.GenerateContentConfig(
-                        system_instruction=_EXTRACT_PROMPT,
-                        temperature=0,
-                        response_mime_type="application/json",
-                    ),
-                )
-        except Exception as exc:
-            logger.warning("GEMINI: image request failed, using fallback: %s", exc)
-            return GeminiVisionResult(success=False, error=f"Gemini API error: {exc}")
+        response, request_error = cls._generate_with_retry(
+            contents=[
+                pil_image,
+                "Extract the packaged commodity label fields as JSON per the schema above.",
+            ],
+            system_instruction=_EXTRACT_PROMPT,
+            api_key=api_key,
+            model_name=model_name,
+        )
+        if request_error is not None:
+            logger.warning("GEMINI: image request failed, using fallback: %s", request_error)
+            return GeminiVisionResult(success=False, error=f"Gemini API error: {request_error}")
 
         # ---- Parse response ----
         try:
@@ -670,6 +663,109 @@ class GeminiVisionService:
         )
 
     @classmethod
+    def extract_multi(
+        cls,
+        image_refs: List[str],
+        pil_images: Optional[List[Optional[Image.Image]]] = None,
+    ) -> GeminiVisionResult:
+        """Send multiple label images (FRONT + BACK) to Gemini in one request.
+
+        Each reference in ``image_refs`` is fetched (unless a matching
+        ``pil_images`` entry is supplied) and the images are attached together
+        with the extraction prompt, so the model reads the whole package label
+        at once. Returns the same ``GeminiVisionResult`` as ``extract()``.
+        """
+        if not cls.is_configured():
+            return GeminiVisionResult(
+                success=False,
+                error="Gemini Vision is not configured (set GEMINI_API_KEY and VISION_MODEL).",
+            )
+
+        refs = [ref for ref in (image_refs or []) if ref]
+        if not refs:
+            return GeminiVisionResult(
+                success=False, error="No images supplied for Gemini extraction."
+            )
+
+        images: List[Image.Image] = []
+        for index, ref in enumerate(refs):
+            pil_image = None
+            if pil_images and index < len(pil_images):
+                pil_image = pil_images[index]
+            try:
+                if pil_image is None:
+                    pil_image = cls._fetch_image(ref)
+                if pil_image.mode != "RGB":
+                    pil_image = pil_image.convert("RGB")
+                images.append(pil_image)
+            except Exception as exc:
+                logger.warning(
+                    "GEMINI: could not load image %s, using fallback: %s", ref, exc
+                )
+                return GeminiVisionResult(success=False, error=f"Could not load image: {exc}")
+
+        api_key = settings.GEMINI_API_KEY.strip()
+        model_name = settings.VISION_MODEL.strip()
+
+        response, request_error = cls._generate_with_retry(
+            contents=[
+                *images,
+                "Extract the packaged commodity label fields as JSON per the schema above.",
+            ],
+            system_instruction=_EXTRACT_PROMPT,
+            api_key=api_key,
+            model_name=model_name,
+        )
+        if request_error is not None:
+            logger.warning("GEMINI: multi-image request failed, using fallback: %s", request_error)
+            return GeminiVisionResult(success=False, error=f"Gemini API error: {request_error}")
+
+        try:
+            text = str(response.text or "")
+        except (ValueError, AttributeError) as exc:
+            logger.warning("GEMINI: returned no text, using fallback: %s", exc)
+            return GeminiVisionResult(success=False, error=f"Gemini returned no text: {exc}")
+
+        return cls._finalize_response(text)
+
+    @classmethod
+    def _finalize_response(cls, text: str) -> GeminiVisionResult:
+        """Parse and validate Gemini JSON text into a result."""
+        try:
+            raw = _parse_json_content(text or "")
+        except (json.JSONDecodeError, ValueError) as exc:
+            logger.warning("GEMINI: returned invalid JSON, using fallback: %s", exc)
+            return GeminiVisionResult(success=False, error=f"Gemini returned invalid JSON: {exc}")
+
+        # ---- Extract metadata ----
+        image_quality, readability_quality, image_analysis, confidence_details = (
+            _pop_metadata(raw)
+        )
+
+        # ---- Map canonical fields ----
+        product_fields = _project_fields(raw)
+
+        # ---- Usability check ----
+        any_detected = any(
+            f.status == "detected" and f.value for f in product_fields.values()
+        )
+        if not any_detected:
+            return GeminiVisionResult(
+                success=False,
+                error="Gemini returned no usable field extractions.",
+            )
+
+        return GeminiVisionResult(
+            success=True,
+            product_fields=product_fields,
+            raw_extraction=raw,
+            image_quality=image_quality,
+            readability_quality=readability_quality,
+            image_analysis=image_analysis,
+            confidence_details=confidence_details,
+        )
+
+    @classmethod
     def extract_from_text(
         cls,
         combined_text: str,
@@ -678,11 +774,10 @@ class GeminiVisionService:
     ) -> GeminiVisionResult:
         """Extract structured product fields from OCR TEXT via Gemini.
 
-        This is the OCR-first path: Google Cloud Vision (or the Tesseract
-        fallback) has already produced ``combined_text`` from the front and
-        back images. Gemini receives only this text and returns structured
-        JSON. It never looks at the image, so it cannot invent text that OCR
-        did not read.
+        This is the OCR-first path: Tesseract has already produced
+        ``combined_text`` from the front and back images. Gemini receives only
+        this text and returns structured JSON. It never looks at the image, so
+        it cannot invent text that OCR did not read.
 
         Parameters
         ----------
@@ -801,6 +896,48 @@ class GeminiVisionService:
             "resource exhausted",
         )
         return any(marker in message for marker in markers)
+
+    @classmethod
+    def _generate_with_retry(
+        cls,
+        contents: list,
+        system_instruction: str,
+        api_key: str,
+        model_name: str,
+    ) -> Tuple[Any, Optional[Exception]]:
+        """Call ``generate_content`` with one retry for transient errors.
+
+        Google occasionally returns 503/429 "high demand" for a model. The text
+        path already retried; the image path now shares the same behaviour.
+        Returns ``(response, None)`` on success or ``(None, last_error)``.
+        """
+        last_error: Optional[Exception] = None
+        for attempt in range(1, 3):
+            try:
+                with httpx.Client(timeout=settings.VISION_TIMEOUT_SECONDS) as http_client:
+                    client = genai.Client(
+                        api_key=api_key,
+                        http_options=types.HttpOptions(httpx_client=http_client),
+                    )
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=contents,
+                        config=types.GenerateContentConfig(
+                            system_instruction=system_instruction,
+                            temperature=0,
+                            response_mime_type="application/json",
+                        ),
+                    )
+                return response, None
+            except Exception as exc:
+                last_error = exc
+                if not cls._is_transient_error(exc) or attempt == 2:
+                    break
+                logger.info(
+                    "GEMINI: transient error (%s), retrying (%d/2)…", exc, attempt
+                )
+                time.sleep(1)
+        return None, last_error
 
     @staticmethod
     def _fetch_image(image_ref: str) -> Image.Image:

@@ -34,8 +34,11 @@ const quickOperations = [
 
 const PROCESSING_STEPS = [
   { key: 'quality', label: 'Image Quality' },
-  { key: 'ocr', label: 'OCR Extraction' },
-  { key: 'product', label: 'Product Information' },
+  { key: 'auto_crop', label: 'AI Auto-Crop' },
+  { key: 'extraction', label: 'Data Extraction' },
+  { key: 'classification', label: 'Category Classification' },
+  { key: 'missing_info', label: 'Missing Info / Recapture' },
+  { key: 'comparison', label: 'Previous Comparison' },
   { key: 'rules', label: 'Rule Validation' },
   { key: 'report', label: 'Report Generation' },
 ];
@@ -92,11 +95,11 @@ function validateUpload(file: File | undefined): UploadValidation {
 }
 
 function getProcessingStepIndex(step: string): number {
-  if (step === 'creating' || step === 'uploading') return 0;
-  if (step === 'ocr') return 1;
-  if (step === 'extracting') return 2;
-  if (step === 'compliance') return 3;
-  if (step === 'completed') return 4;
+  if (step === 'creating' || step === 'uploading') return 0; // Image Quality
+  if (step === 'ocr') return 2; // Data Extraction
+  if (step === 'extracting') return 4; // Missing Info / Recapture
+  if (step === 'compliance') return 6; // Rule Validation
+  if (step === 'completed') return 7; // Report Generation
   return 0;
 }
 
@@ -625,7 +628,7 @@ function ProcessingPanel({
         </span>
       </div>
       <p className="mt-2 text-xs text-[#64748b]">Preparing compliance analysis...</p>
-      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {PROCESSING_STEPS.map((step, index) => {
           const status =
             index < activeStep

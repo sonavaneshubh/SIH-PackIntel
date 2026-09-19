@@ -22,15 +22,17 @@ class Settings(BaseSettings):
     VISION_MODEL: str = "gemini-3.6-flash"
     VISION_TIMEOUT_SECONDS: int = 30
 
-    # Master switch for multimodal (Gemini) vision fallback in the scan
-    # pipeline. The OCR.Space engine is the only OCR source; this flag merely
-    # re-arms the optional vision pass for future use. Off by default.
+    # Master switch for the legacy multimodal (Gemini) vision fallback that may
+    # enrich the OCR-first scan path after regex extraction. With
+    # GEMINI_PRIMARY_ENABLED this legacy pass is redundant (Gemini already
+    # drives the primary extraction), so keep this False.
     ENABLE_VISION_FALLBACK: bool = False
 
     # Primary Gemini Vision extraction: when enabled, Gemini analyses the
-    # actual image and returns structured product data directly, bypassing
-    # the OCR → text-normalizer → product-extractor path. Disabled by default
-    # so that existing tests run against the OCR-only pipeline.
+    # actual label image(s) and returns structured product data directly,
+    # bypassing the OCR → text-normalizer → product-extractor path. Tesseract
+    # OCR (and Gemini-from-text) remain the fallback when Gemini is disabled or
+    # fails. Tests force this off so the suite stays offline.
     GEMINI_PRIMARY_ENABLED: bool = False
 
     # Pipeline tuning (see scanning pipeline services).
@@ -42,12 +44,12 @@ class Settings(BaseSettings):
     # Hard cap on the longest image side (px). Images are downscaled to this
     # bound at ingestion so every decoded copy downstream (PIL buffer, base64
     # data URI, PNG re-encode, OCR/vision fetch) stays small. 1600 px is ample
-    # for label OCR text and matches the common 2000 px OCR.Space limit.
+    # for label OCR text.
     MAX_IMAGE_DIMENSION: int = 1600
     # Maximum bytes accepted when downloading an image URL (scan JSON path).
     # Guards the pipeline against unbounded remote downloads spiking memory.
     MAX_IMAGE_DOWNLOAD_MB: int = 15
-    # Hard timeout (seconds) for each OCR.Space API call.
+    # Hard timeout (seconds) for each OCR call.
     OCR_TIMEOUT_SECONDS: int = 60
 
     # When True, the scan pipeline logs the worker's RSS at key stages so peak

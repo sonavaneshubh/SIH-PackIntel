@@ -58,7 +58,7 @@ def stub_ocr(
     monkeypatch,
     text: str = "",
     *,
-    engine: str = "google_vision",
+    engine: str = "tesseract",
     confidence: float = 0.0,
     image_quality: str | None = None,
     quality_reason: str | None = None,
@@ -67,8 +67,8 @@ def stub_ocr(
     """Make the scan pipeline's OCR engine return canned output (no network).
 
     Replaces ``get_ocr_service`` in the scan route so no test touches the real
-    Google Cloud Vision API or local Tesseract. ``raise_exc`` makes the OCR
-    engine raise (simulating an API outage).
+    Tesseract binary or the Gemini vision API. ``raise_exc`` makes the OCR
+    engine raise (simulating an outage).
     """
     if raise_exc is not None:
 
@@ -110,9 +110,9 @@ def _hermetic_scan_tests(monkeypatch):
     """Offline, vision-disabled defaults for the test suite.
 
     Every test runs with:
-    * Gemini vision fallback disabled by configuration,
+    * Gemini vision disabled by configuration,
     * the OCR path stubbed to a canned (default empty) result so no test
-      touches the real Google Cloud Vision API or local Tesseract.
+      touches the real Tesseract binary or the Gemini vision API.
 
     Tests override the stub via ``stub_ocr`` for specific responses.
     ``stub_ocr_space`` remains available for the OCR.Space unit tests, which

@@ -48,7 +48,7 @@ _OCR_FAILURE_TEMPLATE: Dict[str, Any] = {
     "text": "",
     "raw_text": "",
     "confidence": 0.0,
-    "engine": "google_vision",
+    "engine": "tesseract",
     "lines": [],
     "regions": [],
     "layout_regions": [],
@@ -68,27 +68,24 @@ async def scan_status(current_user: dict = Depends(get_current_user)):
     available. API keys are never reflected here.
     """
     from app.services.ocr_service import (
-        get_google_vision_diagnostics,
         get_tesseract_diagnostics,
     )
     from app.services.gemini_vision import GeminiVisionService
 
-    vision_status = get_google_vision_diagnostics()
     tesseract_status = get_tesseract_diagnostics()
     gemini_configured = GeminiVisionService.is_configured()
 
-    # The scanner is usable when at least one OCR engine is available.
-    ocr_ready = vision_status["available"] or tesseract_status["available"]
+    # The scanner is usable when the local OCR engine is available.
+    ocr_ready = tesseract_status["available"]
 
     return {
         "status": "ready" if ocr_ready else "degraded",
         "pipeline": "detection -> quality -> preprocessing -> ocr -> extraction -> compliance",
         "ocr_configured": ocr_ready,
         "ocr_engines": {
-            "google_vision": vision_status["available"],
             "tesseract": tesseract_status["available"],
         },
-        "primary_ocr": "google_vision" if vision_status["available"] else "tesseract",
+        "primary_ocr": "tesseract",
         "vision_configured": gemini_configured,
         "multi_image": True,
         "food_package_confidence_threshold": settings.FOOD_PACKAGE_CONFIDENCE_THRESHOLD,
@@ -134,17 +131,17 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
     front_detection: Optional[ImageDetection] = None
 
     # ---- PIPELINE: GEMINI VISION PRIMARY, OCR-TEXT SECONDARY ---------------
-    # When GEMINI_PRIMARY_ENABLED, Gemini Vision reads the front image directly
-    # and returns structured label fields. It does NOT depend on Google Cloud
-    # Vision's OCR text, so garbled/empty OCR no longer blocks extraction. It
-    # is submitted to the same worker pool as detection/quality/OCR so it adds
-    # no serial latency while enabled.
+    # When GEMINI_PRIMARY_ENABLED, Gemini Vision reads the label image(s)
+    # directly and returns structured label fields. It is independent of the
+    # local OCR text, so garbled/empty Tesseract output no longer blocks
+    # extraction. It is submitted to the same worker pool as
+    # detection/quality/OCR so it adds no serial latency while enabled.
     #
-    # The OCR pass (Google Cloud Vision -> Tesseract) still runs for every
-    # side: its text/regions feed the response contract and the report. If
-    # Gemini Vision is disabled or yields nothing, the pipeline falls back to
-    # the OCR-first flow (combined text -> Gemini-from-text -> regex
-    # extraction -> optional multimodal vision fallback).
+    # The Tesseract OCR pass still runs for every side: its text/regions feed
+    # the response contract and the report. If Gemini Vision is disabled or
+    # yields nothing, the pipeline falls back to the OCR-first flow (combined
+    # text -> Gemini-from-text -> regex extraction -> optional multimodal
+    # vision fallback).
     gemini_product_fields: Optional[Dict[str, ProductField]] = None
     gemini_vision_result: Optional[Any] = None
 
@@ -153,10 +150,20 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
     # first side always supplies the "front" response fields (same contract as
     # a sequential loop).
     front_ref = sides[0]["image_ref"] if sides else None
+    gemini_image_refs = [side["image_ref"] for side in sides if side.get("image_ref")]
     gemini_future = None
     with ThreadPoolExecutor(max_workers=max(2, len(sides))) as pool:
-        if settings.GEMINI_PRIMARY_ENABLED and front_ref:
-            gemini_future = pool.submit(GeminiVisionService.extract, front_ref)
+        if settings.GEMINI_PRIMARY_ENABLED and gemini_image_refs:
+            # Single side: one image. Both sides: the front and back images are
+            # sent together so back-only declarations can be extracted too.
+            if len(gemini_image_refs) == 1:
+                gemini_future = pool.submit(
+                    GeminiVisionService.extract, gemini_image_refs[0]
+                )
+            else:
+                gemini_future = pool.submit(
+                    GeminiVisionService.extract_multi, gemini_image_refs
+                )
         processed = list(pool.map(_process_one_side, sides))
 
     if gemini_future is not None:
@@ -245,12 +252,11 @@ async def create_scan(request: Request, current_user: dict = Depends(get_current
             getattr(gemini_vision_result, "readability_quality", "MEDIUM"),
         )
 
-        # The Gemini image pass only sees the FRONT side, so declarations
-        # printed on the BACK (importer block, batch/FSSAI, expiry, veg marks)
-        # can be missed by Gemini. The OCR-pipeline extraction therefore always
-        # runs over the combined front+back OCR text, and OCR fills exactly the
-        # fields Gemini left not_visible. Gemini stays the primary source and
-        # only missing values are back-filled — never overwritten.
+        # Gemini reads the front image (and the back image when both sides are
+        # submitted). Back-only declarations are additionally covered by the
+        # combined front+back OCR text: OCR fills exactly the fields Gemini
+        # left not_visible. Gemini stays the primary source and only missing
+        # values are back-filled — never overwritten.
         try:
             ocr_info, _ocr_conf = AIService.extract_product_information(
                 extraction_text, ocr_confidence=ocr_confidence
@@ -727,7 +733,7 @@ def _process_one_side(side: dict) -> Dict[str, Any]:
         label=label,
         source=side.get("source"),
         ocr_raw_text=ocr_text,
-        ocr_engine=ocr_result.get("engine") or "ocr_space",
+        ocr_engine=ocr_result.get("engine") or "tesseract",
         ocr_confidence=float(ocr_result.get("confidence") or 0.0),
         ocr_regions=ocr_result.get("regions") or [],
         layout_regions=ocr_result.get("layout_regions") or [],

@@ -415,7 +415,7 @@ class StubOCR:
         return {
             "raw_text": self.text,
             "confidence": self.confidence,
-            "engine": "google_vision",
+            "engine": "tesseract",
             "regions": [],
             "image_quality": self.quality,
             "quality_reason": None,

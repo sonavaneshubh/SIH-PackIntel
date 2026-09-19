@@ -1,7 +1,7 @@
 // API Client module for Backend FastAPI integration
 import type { ProductInformation } from '@/types/product';
 
-const LOCAL_API_BASE_URL = 'http://localhost:5000';
+const LOCAL_API_BASE_URL = 'http://127.0.0.1:5055';
 
 // Loopback hosts must never be targeted by a production deployment. A leftover
 // NEXT_PUBLIC_API_URL pointing at localhost produces a clear configuration

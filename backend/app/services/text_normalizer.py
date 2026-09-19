@@ -1,6 +1,6 @@
 """OCR text normalization for the PackIntel scan pipeline.
 
-The normalizer turns raw Google Cloud Vision / Tesseract output into a form
+The normalizer turns raw Tesseract OCR output into a form
 that the regex extraction layer can parse more reliably, while NEVER altering
 the characters of brand or product names.
 

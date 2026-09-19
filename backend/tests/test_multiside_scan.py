@@ -124,7 +124,7 @@ def test_valid_food_package_multipart_completes(monkeypatch):
     assert data["success"] is True
     assert data["images_processed"] == 1
     assert data["front_side"]["label"] == "front"
-    assert data["front_side"]["ocr_engine"] == "google_vision"
+    assert data["front_side"]["ocr_engine"] == "tesseract"
     assert data["product_information"]["net_quantity"]["value"] == "5 kg"
     assert data["detection"] is not None
     assert isinstance(data["detection"]["is_food_package"], bool)
@@ -211,7 +211,7 @@ class _TwoSideOCRStub:
                     "Manufacturer: Acme Foods",
         "layout_text": "",
         "confidence": 92.0,
-        "engine": "google_vision",
+        "engine": "tesseract",
         "regions": [],
         "layout_regions": [],
         "layout_region_count": 0,
@@ -222,7 +222,7 @@ class _TwoSideOCRStub:
         "raw_text": "",
         "layout_text": "",
         "confidence": 0.0,
-        "engine": "google_vision",
+        "engine": "tesseract",
         "regions": [],
         "layout_regions": [],
         "layout_region_count": 0,

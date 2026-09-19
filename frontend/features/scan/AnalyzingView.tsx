@@ -8,12 +8,14 @@ import { supabase } from '@/lib/supabase/client';
 import { Inspection } from '@/types/database';
 
 const PIPELINE_STAGES = [
-  { id: 'creating', name: 'Create', icon: 'assignment_add', description: 'Creating inspection record...' },
-  { id: 'uploading', name: 'Upload', icon: 'cloud_upload', description: 'Uploading image to storage...' },
-  { id: 'ocr', name: 'OCR', icon: 'document_scanner', description: 'Extracting text from image...' },
-  { id: 'extracting', name: 'Extract', icon: 'psychology', description: 'Identifying declarations...' },
-  { id: 'compliance', name: 'Check', icon: 'rule', description: 'Evaluating compliance rules...' },
-  { id: 'completed', name: 'Done', icon: 'check_circle', description: 'Finalizing results...' },
+  { id: 'image_quality', name: 'Image Quality', icon: 'high_quality', description: 'Checking image quality...' },
+  { id: 'auto_crop', name: 'AI Auto-Crop', icon: 'crop', description: 'Applying AI auto-crop...' },
+  { id: 'extraction', name: 'Data Extraction', icon: 'document_scanner', description: 'Extracting text and data...' },
+  { id: 'classification', name: 'Category Classification', icon: 'category', description: 'Classifying product category...' },
+  { id: 'missing_info', name: 'Missing Information / Recapture Check', icon: 'find_in_page', description: 'Checking for missing information...' },
+  { id: 'comparison', name: 'Previous Comparison', icon: 'compare', description: 'Comparing with previous scans...' },
+  { id: 'validation', name: 'Rule Validation', icon: 'rule', description: 'Validating against compliance rules...' },
+  { id: 'report', name: 'Report Generation', icon: 'summarize', description: 'Generating final report...' },
 ];
 
 export function AnalyzingView() {
@@ -24,6 +26,7 @@ export function AnalyzingView() {
   const [currentStage, setCurrentStage] = useState(0);
   const [logs, setLogs] = useState<string[]>([]);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [backendCompleted, setBackendCompleted] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -46,6 +49,9 @@ export function AnalyzingView() {
 
       setInspection(data);
       updateStageFromStatus(data.status);
+      if (data.status === 'completed' || data.status === 'failed') {
+        setBackendCompleted(true);
+      }
     };
 
     fetchInspection();
@@ -59,13 +65,17 @@ export function AnalyzingView() {
         .single();
 
       if (data) {
-        setInspection(prev => prev ? { ...prev, ...data } : null);
-        updateStageFromStatus(data.status);
+        setInspection(prev => {
+          if (prev) {
+            updateStageFromStatus(data.status, prev.status);
+            return { ...prev, ...data };
+          }
+          return null;
+        });
 
         if (data.status === 'completed' || data.status === 'failed') {
-          setIsCompleted(true);
+          setBackendCompleted(true);
           clearInterval(interval);
-          setTimeout(() => router.push(`/results?inspection=${inspectionId}`), 1500);
         }
       }
     }, 2000);
@@ -73,14 +83,26 @@ export function AnalyzingView() {
     return () => clearInterval(interval);
   }, [inspectionId, router]);
 
-  const updateStageFromStatus = (status: string) => {
+  const updateStageFromStatus = (status: string, prevStatus?: string) => {
+    // If backend is completed during polling, we handle it via visual zip-through
+    if ((status === 'completed' || status === 'failed') && prevStatus !== undefined) return;
+    
+    if (status === prevStatus && status === 'processing') return; // Don't reset if we are advancing visually
+
     const stageMap: Record<string, number> = {
       draft: 0,
       processing: 1,
-      completed: 5,
-      failed: 5,
+      completed: 7,
+      failed: 7,
     };
-    setCurrentStage(stageMap[status] || 0);
+    
+    // Only update if it's a new status or we're not currently processing
+    setCurrentStage(current => {
+      if (status === 'processing' && current > 1 && current < 7) {
+        return current;
+      }
+      return stageMap[status] || 0;
+    });
   };
 
   const addLog = (message: string) => {
@@ -89,11 +111,36 @@ export function AnalyzingView() {
 
   // Simulate logs based on current stage
   useEffect(() => {
-    if (currentStage > 0 && logs.length < currentStage) {
-      const stage = PIPELINE_STAGES[currentStage - 1];
-      addLog(stage.description);
+    if (currentStage > 0) {
+      setLogs(prev => {
+        if (prev.length < currentStage) {
+          const newLogs = [...prev];
+          for (let i = prev.length; i < currentStage; i++) {
+            newLogs.push(PIPELINE_STAGES[i].description);
+          }
+          return newLogs;
+        }
+        return prev;
+      });
     }
   }, [currentStage]);
+
+  // Visually progress through stages
+  useEffect(() => {
+    // If backend is processing, or backend completed but UI hasn't caught up yet
+    if ((inspection?.status === 'processing' || backendCompleted) && currentStage >= 1 && currentStage < PIPELINE_STAGES.length - 1 && !isCompleted) {
+      const speed = backendCompleted ? 300 : 2500; // Zip through at 300ms if backend is done
+      const timer = setTimeout(() => {
+        setCurrentStage(prev => prev + 1);
+      }, speed);
+      
+      return () => clearTimeout(timer);
+    } else if (backendCompleted && currentStage === PIPELINE_STAGES.length - 1 && !isCompleted) {
+      // Reached the end AND backend is done
+      setIsCompleted(true);
+      setTimeout(() => router.push(`/results?inspection=${inspectionId}`), 1500);
+    }
+  }, [inspection?.status, currentStage, backendCompleted, isCompleted, inspectionId, router]);
 
   if (error) {
     return (
@@ -136,9 +183,9 @@ export function AnalyzingView() {
 
         {/* Pipeline Grid Card */}
         <div className="w-full bg-surface border border-outline-variant shadow-sm rounded-xl p-6 md:p-8 mb-8">
-          <div className="grid grid-cols-1 md:grid-cols-6 gap-4 relative">
+          <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-4 relative">
             {/* Connector Line (Desktop) */}
-            <div className="hidden md:block absolute top-6 left-[8.33%] right-[8.33%] h-1 bg-surface-container-highest z-0">
+            <div className="hidden lg:block absolute top-6 left-[6.25%] right-[6.25%] h-1 bg-surface-container-highest z-0">
               <div
                 className="h-full bg-primary transition-all duration-700 ease-in-out"
                 style={{ width: `${(currentStage / (PIPELINE_STAGES.length - 1)) * 100}%` }}

@@ -51,12 +51,12 @@ def test_cors_preflight_allows_local_frontend():
 def test_low_confidence_scan_does_not_invoke_gemini(monkeypatch):
     image = Image.new("RGB", (600, 600), "white")
 
-    class FakeOCRSpace:
+    class FakeOCR:
         def process_image(self, image_url):
             return {
                 "raw_text": "Rice",
                 "confidence": 25.0,
-                "engine": "ocr_space",
+                "engine": "tesseract",
                 "regions": [],
                 "image_quality": "usable",
                 "quality_reason": None,
@@ -64,9 +64,9 @@ def test_low_confidence_scan_does_not_invoke_gemini(monkeypatch):
 
     # Gemini must never execute, even for low-confidence OCR text.
     def _forbidden_vision_call(_):
-        raise AssertionError("Gemini vision was called during the OCR.Space-only scan")
+        raise AssertionError("Gemini vision was called during the OCR-only scan")
 
-    monkeypatch.setattr(scan_route, "get_ocr_service", lambda: FakeOCRSpace())
+    monkeypatch.setattr(scan_route, "get_ocr_service", lambda: FakeOCR())
     monkeypatch.setattr(scan_route.VisionService, "extract", _forbidden_vision_call)
     monkeypatch.setattr(scan_route, "get_current_user", lambda: {"sub": "test-user"})
 
@@ -135,7 +135,7 @@ def test_clear_text_image_completes_with_extracted_information(monkeypatch):
     data = response.json()
     assert data["scan_completed"] is True
     assert data["success"] is True
-    assert data["ocr_engine"] == "google_vision"
+    assert data["ocr_engine"] == "tesseract"
     assert data["ocr_raw_text"]
     assert data["score"] > 0
 
@@ -149,7 +149,7 @@ def test_partial_text_completes_with_partial_status(monkeypatch):
     data = response.json()
     assert data["scan_completed"] is True
     assert data["status"] == "partial_information"
-    assert data["ocr_engine"] == "google_vision"
+    assert data["ocr_engine"] == "tesseract"
     assert data["score"] > 0
     assert data["report"]
 
@@ -162,7 +162,7 @@ def test_blank_image_completes_with_zero_score():
     assert data["scan_completed"] is True
     assert data["score"] == 0
     assert data["status"] == "insufficient_information"
-    assert data["ocr_engine"] == "google_vision"
+    assert data["ocr_engine"] == "tesseract"
     assert "readable" in data["report"].lower()
 
 
@@ -203,7 +203,7 @@ def test_expected_ocr_exception_completes_without_crash(monkeypatch):
 
     stub_ocr(
         monkeypatch,
-        raise_exc=OCRSpaceError("Google Vision OCR HTTP 500: service unavailable"),
+        raise_exc=OCRSpaceError("OCR engine HTTP 500: service unavailable"),
     )
 
     response = scan(Image.new("RGB", (600, 600), "white"))
@@ -212,7 +212,7 @@ def test_expected_ocr_exception_completes_without_crash(monkeypatch):
     data = response.json()
     assert data["scan_completed"] is True
     assert data["score"] == 0
-    assert data["ocr_engine"] == "google_vision"
+    assert data["ocr_engine"] == "tesseract"
     assert "HTTP 500" in (data["quality_reason"] or "")
     assert "unable to verify" in data["report"]
 
@@ -240,11 +240,11 @@ def test_normal_compliance_scan_keeps_success_response(monkeypatch):
     assert response.status_code == 200
     assert response.json()["scan_completed"] is True
     assert response.json()["success"] is True
-    assert response.json()["ocr_engine"] == "google_vision"
+    assert response.json()["ocr_engine"] == "tesseract"
 
 
 # ---------------------------------------------------------------------------
-# Google Cloud Vision + Tesseract pipeline guarantees
+# Tesseract OCR pipeline guarantees
 # ---------------------------------------------------------------------------
 
 def test_ocr_space_successful_scan(monkeypatch):
@@ -259,7 +259,7 @@ def test_ocr_space_successful_scan(monkeypatch):
     assert response.status_code == 200
     data = response.json()
     assert data["scan_completed"] is True
-    assert data["ocr_engine"] == "google_vision"
+    assert data["ocr_engine"] == "tesseract"
     assert data["vision_used"] is False
     assert data["extraction_source"] == "ocr"
     assert data["score"] > 0
@@ -278,7 +278,7 @@ def test_ocr_space_empty_response_is_structured_insufficient(monkeypatch):
     assert data["scan_completed"] is True
     assert data["score"] == 0
     assert data["compliance_score"] == 0
-    assert data["ocr_engine"] == "google_vision"
+    assert data["ocr_engine"] == "tesseract"
     assert data["vision_used"] is False
     assert "clearer image" in data["report"].lower()
 
@@ -286,7 +286,7 @@ def test_ocr_space_empty_response_is_structured_insufficient(monkeypatch):
 def test_ocr_space_api_failure_is_structured_ocr_failed(monkeypatch):
     from app.services.ocr_space_service import OCRSpaceError
 
-    stub_ocr(monkeypatch, raise_exc=OCRSpaceError("Google Cloud Vision services are down (500)"))
+    stub_ocr(monkeypatch, raise_exc=OCRSpaceError("OCR services are down (500)"))
 
     response = scan(Image.new("RGB", (600, 600), "white"))
 
@@ -295,7 +295,7 @@ def test_ocr_space_api_failure_is_structured_ocr_failed(monkeypatch):
     assert data["scan_completed"] is True
     assert data["status"] == "insufficient_information"
     assert data["score"] == 0
-    assert data["ocr_engine"] == "google_vision"
+    assert data["ocr_engine"] == "tesseract"
     assert data["image_quality"] == "unusable"
     assert "500" in (data["quality_reason"] or "")
     assert "OCR status: failed" in data["report"]
@@ -419,3 +419,60 @@ def test_ocr_confidence_and_regions_from_data_layer(monkeypatch):
     assert result["regions"][0]["text"] == "MRP"
     assert 0 <= result["regions"][0]["left"] <= 1
     assert 0 <= result["regions"][0]["top"] <= 1
+
+
+# ---------------------------------------------------------------------------
+# Google Cloud Vision removal guarantees
+# ---------------------------------------------------------------------------
+
+
+def test_google_cloud_vision_fully_removed_from_backend():
+    """The production OCR service must contain no Google Cloud Vision code."""
+    import inspect
+
+    source = inspect.getsource(ocr_service)
+    assert "HAS_GOOGLE_VISION" not in source
+    assert "get_google_vision_diagnostics" not in source
+    assert "google.cloud" not in source
+    assert not hasattr(ocr_service, "HAS_GOOGLE_VISION")
+    assert not hasattr(ocr_service, "get_google_vision_diagnostics")
+
+
+def test_ocr_process_image_is_tesseract_only(monkeypatch):
+    """A successful OCR run is stamped ``tesseract`` — never google_vision."""
+    monkeypatch.setattr(
+        OCRService,
+        "_run_tesseract",
+        lambda img: ("PRODUCT Rice\nMRP Rs. 149\nNet Quantity 500 g", 88.0, []),
+    )
+    monkeypatch.setattr(
+        ocr_service,
+        "get_tesseract_diagnostics",
+        lambda: {"available": True, "reason": "ok", "message": "ok"},
+    )
+
+    result = OCRService.process_image(image_data_uri(Image.new("RGB", (600, 600), "white")))
+
+    assert result["engine"] == "tesseract"
+    assert result["status"] == "success"
+    assert "PRODUCT Rice" in result["raw_text"]
+
+
+def test_scan_status_reports_tesseract_and_gemini_without_gcv(monkeypatch):
+    """/api/scan/status must advertise Tesseract (+ Gemini) and no GCV."""
+    monkeypatch.setattr(
+        ocr_service,
+        "get_tesseract_diagnostics",
+        lambda: {"available": True, "reason": "ok", "message": "ok"},
+    )
+
+    response = client.get("/api/scan/status")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["primary_ocr"] == "tesseract"
+    assert data["ocr_configured"] is True
+    assert data["ocr_engines"]["tesseract"] is True
+    assert "google_vision" not in data["ocr_engines"]
+    assert "vision_configured" in data
+    assert data["multi_image"] is True
