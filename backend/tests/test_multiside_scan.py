@@ -233,7 +233,7 @@ class _TwoSideOCRStub:
     def __init__(self, front_uri: str):
         self.front_uri = front_uri
 
-    def process_image(self, image_url):
+    def process_image(self, image_url, pil_image=None):
         if image_url == self.front_uri:
             return dict(self.GOOD)
         return dict(self.BAD)

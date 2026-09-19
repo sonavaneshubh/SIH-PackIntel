@@ -1,4 +1,450 @@
-INFO:     Started server process [4616]
+INFO:     Will watch for changes in these directories: ['C:\\Users\\Dnyaneshwar\\Downloads\\PackIntel\\PackIntel\\backend']
+INFO:     Uvicorn running on http://0.0.0.0:5000 (Press CTRL+C to quit)
+INFO:     Started reloader process [6744] using WatchFiles
+INFO:     Started server process [21748]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-INFO:     Uvicorn running on http://0.0.0.0:5000 (Press CTRL+C to quit)
+WARNING:  WatchFiles detected changes in 'app\services\ocr_service.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [21748]
+WARNING:  WatchFiles detected changes in 'app\api\routes\scan.py'. Reloading...
+INFO:     Started server process [15792]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [15792]
+WARNING:  WatchFiles detected changes in 'app\api\routes\scan.py'. Reloading...
+INFO:     Started server process [19792]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [19792]
+WARNING:  WatchFiles detected changes in 'app\api\routes\scan.py'. Reloading...
+INFO:     Started server process [9436]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [9436]
+WARNING:  WatchFiles detected changes in 'app\api\routes\scan.py'. Reloading...
+INFO:     Started server process [18484]
+INFO:     Waiting for application startup.
+OCR unavailable: Tesseract OCR is configured but cannot be executed.
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [18484]
+INFO:     Started server process [3208]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app\services\gemini_vision.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [3208]
+WARNING:  WatchFiles detected changes in 'app\services\gemini_vision.py'. Reloading...
+INFO:     Started server process [29092]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app\services\gemini_vision.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [29092]
+INFO:     Started server process [10368]
+INFO:     Waiting for application startup.
+WARNING:  WatchFiles detected changes in 'app\services\gemini_vision.py'. Reloading...
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [10368]
+WARNING:  WatchFiles detected changes in 'app\core\config.py'. Reloading...
+INFO:     Started server process [1548]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1548]
+INFO:     Started server process [23176]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'tests\conftest.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [23176]
+WARNING:  WatchFiles detected changes in 'tests\conftest.py', 'tests\test_main.py'. Reloading...
+INFO:     Started server process [26520]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [26520]
+WARNING:  WatchFiles detected changes in 'tests\test_main.py'. Reloading...
+INFO:     Started server process [27192]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'tests\test_main.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [27192]
+WARNING:  WatchFiles detected changes in 'tests\test_main.py'. Reloading...
+INFO:     Started server process [22392]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [22392]
+INFO:     Started server process [5568]
+INFO:     Waiting for application startup.
+WARNING:  WatchFiles detected changes in 'tests\test_multiside_scan.py'. Reloading...
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [5568]
+INFO:     Started server process [18692]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'tests\test_phase2.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [18692]
+INFO:     Started server process [16464]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app\services\text_normalizer.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [16464]
+WARNING:  WatchFiles detected changes in 'tests\test_gemini_vision.py'. Reloading...
+INFO:     Started server process [26032]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [26032]
+INFO:     Started server process [20124]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'tests\test_main.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [20124]
+INFO:     Started server process [10320]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'tests\test_gemini_vision.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [10320]
+WARNING:  WatchFiles detected changes in 'tests\test_gemini_vision.py'. Reloading...
+INFO:     Started server process [480]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [480]
+INFO:     Started server process [660]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'tests\test_gemini_vision.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [660]
+WARNING:  WatchFiles detected changes in 'tests\test_gemini_vision.py'. Reloading...
+INFO:     Started server process [24652]
+INFO:     Waiting for application startup.
+ERROR:    Traceback (most recent call last):
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\starlette\routing.py", line 648, in lifespan
+    async with self.lifespan_context(app) as maybe_state:
+               ~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\Dnyaneshwar\AppData\Local\Programs\Python\Python314\Lib\contextlib.py", line 214, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\fastapi\routing.py", line 240, in merged_lifespan
+    async with original_context(app) as maybe_original_state:
+               ~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\Dnyaneshwar\AppData\Local\Programs\Python\Python314\Lib\contextlib.py", line 214, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\fastapi\routing.py", line 240, in merged_lifespan
+    async with original_context(app) as maybe_original_state:
+               ~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\Dnyaneshwar\AppData\Local\Programs\Python\Python314\Lib\contextlib.py", line 214, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\fastapi\routing.py", line 240, in merged_lifespan
+    async with original_context(app) as maybe_original_state:
+               ~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\Dnyaneshwar\AppData\Local\Programs\Python\Python314\Lib\contextlib.py", line 214, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\fastapi\routing.py", line 240, in merged_lifespan
+    async with original_context(app) as maybe_original_state:
+               ~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\Dnyaneshwar\AppData\Local\Programs\Python\Python314\Lib\contextlib.py", line 214, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\app\main.py", line 27, in lifespan
+    await ensure_inspection_reports_bucket()
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\app\services\storage_service.py", line 82, in ensure_inspection_reports_bucket
+    if await storage_bucket_exists(bucket):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\app\services\storage_service.py", line 43, in storage_bucket_exists
+    response = await client.get(url, headers=supabase_headers())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpx\_client.py", line 1768, in get
+    return await self.request(
+           ^^^^^^^^^^^^^^^^^^^
+    ...<9 lines>...
+    )
+    ^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpx\_client.py", line 1540, in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpx\_client.py", line 1629, in send
+    response = await self._send_handling_auth(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+    )
+    ^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpx\_client.py", line 1657, in _send_handling_auth
+    response = await self._send_handling_redirects(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpx\_client.py", line 1694, in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpx\_client.py", line 1730, in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpx\_transports\default.py", line 394, in handle_async_request
+    resp = await self._pool.handle_async_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpcore\_async\connection_pool.py", line 256, in handle_async_request
+    raise exc from None
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpcore\_async\connection_pool.py", line 236, in handle_async_request
+    response = await connection.handle_async_request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        pool_request.request
+        ^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpcore\_async\connection.py", line 101, in handle_async_request
+    raise exc
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpcore\_async\connection.py", line 78, in handle_async_request
+    stream = await self._connect(request)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpcore\_async\connection.py", line 124, in _connect
+    stream = await self._network_backend.connect_tcp(**kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpcore\_backends\auto.py", line 31, in connect_tcp
+    return await self._backend.connect_tcp(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+    )
+    ^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpcore\_backends\anyio.py", line 115, in connect_tcp
+    stream: anyio.abc.ByteStream = await anyio.connect_tcp(
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\anyio\_core\_sockets.py", line 232, in connect_tcp
+    gai_res = await getaddrinfo(
+              ^^^^^^^^^^^^^^^^^^
+        target_host, remote_port, family=family, type=socket.SOCK_STREAM
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\anyio\_core\_sockets.py", line 657, in getaddrinfo
+    gai_res = await get_async_backend().getaddrinfo(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        encoded_host, port, family=family, type=type, proto=proto, flags=flags
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\anyio\_backends\_asyncio.py", line 2950, in getaddrinfo
+    return await get_running_loop().getaddrinfo(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        host, port, family=family, type=type, proto=proto, flags=flags
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Dnyaneshwar\AppData\Local\Programs\Python\Python314\Lib\asyncio\base_events.py", line 936, in getaddrinfo
+    return await self.run_in_executor(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        None, getaddr_func, host, port, family, type, proto, flags)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+asyncio.exceptions.CancelledError
+
+INFO:     Started server process [27500]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in '.venv\Lib\site-packages\google\cloud\~ision_v1p1beta1\services\image_annotator\client.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\services\image_annotator\async_client.py', '.venv\Lib\site-packages\google\cloud\~ision_helpers\decorators.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p2beta1\types\web_detection.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\services\product_search\transports\base.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\types\product_search.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\types\web_detection.py', '.venv\Lib\site-packages\google\cloud\~ision\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\services\product_search\transports\grpc.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\services\image_annotator\transports\grpc_asyncio.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p1beta1\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\services\product_search\pagers.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\services\image_annotator\transports\rest_base.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\types\geometry.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\services\product_search\pagers.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p2beta1\services\image_annotator\transports\rest_base.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\services\product_search\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\types\text_annotation.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p2beta1\services\image_annotator\client.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\types\text_annotation.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p1beta1\services\image_annotator\transports\grpc.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\services\product_search\client.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\services\image_annotator\transports\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\services\product_search\transports\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p1beta1\services\image_annotator\transports\grpc_asyncio.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p1beta1\services\image_annotator\transports\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\types\face.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\types\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\services\image_annotator\transports\grpc_asyncio.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\services\product_search\transports\grpc_asyncio.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p1beta1\types\image_annotator.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\services\product_search\pagers.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\services\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\types\text_annotation.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\services\image_annotator\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision\gapic_version.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\services\image_annotator\transports\grpc.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\types\product_search.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\services\product_search\async_client.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\services\product_search\transports\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\services\image_annotator\client.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\services\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\types\image_annotator.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\services\product_search\transports\rest.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p2beta1\types\image_annotator.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p2beta1\services\image_annotator\transports\rest.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\services\product_search\transports\rest_base.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\services\image_annotator\transports\base.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\types\web_detection.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p1beta1\gapic_version.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\gapic_version.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\services\image_annotator\async_client.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p1beta1\services\image_annotator\transports\base.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\services\product_search\transports\base.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\services\image_annotator\transports\base.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\services\image_annotator\transports\rest_base.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\services\image_annotator\transports\rest_base.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\services\image_annotator\transports\grpc.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\services\product_search\transports\rest.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\services\image_annotator\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\services\image_annotator\transports\base.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\types\web_detection.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\services\product_search\transports\rest_base.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p1beta1\services\image_annotator\transports\rest_base.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\services\product_search\transports\rest.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\services\product_search\async_client.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\types\product_search_service.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p2beta1\services\image_annotator\transports\grpc_asyncio.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\gapic_version.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\services\product_search\async_client.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\services\image_annotator\client.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\services\product_search\transports\grpc_asyncio.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\services\image_annotator\transports\grpc.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\services\image_annotator\async_client.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\services\product_search\client.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p1beta1\services\image_annotator\transports\rest.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p2beta1\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p1beta1\types\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p2beta1\types\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\types\geometry.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\types\product_search.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p2beta1\gapic_version.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p2beta1\services\image_annotator\transports\grpc.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p1beta1\types\geometry.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\services\image_annotator\transports\rest.py', '.venv\Lib\site-packages\google\cloud\~ision_helpers\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\services\image_annotator\client.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p2beta1\services\image_annotator\transports\base.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\types\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\types\geometry.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\services\image_annotator\transports\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\services\product_search\transports\base.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p1beta1\services\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\types\image_annotator.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p1beta1\types\text_annotation.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p1beta1\services\image_annotator\async_client.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\services\product_search\client.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p2beta1\services\image_annotator\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\gapic_version.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\services\product_search\transports\grpc.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\services\product_search\transports\rest_base.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\services\image_annotator\transports\grpc_asyncio.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\types\image_annotator.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\services\image_annotator\transports\rest.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p1beta1\types\web_detection.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p2beta1\services\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\types\product_search_service.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\types\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\services\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\services\image_annotator\transports\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p2beta1\services\image_annotator\transports\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p2beta1\services\image_annotator\async_client.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\services\product_search\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p2beta1\types\geometry.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\services\image_annotator\transports\rest.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p4beta1\services\product_search\transports\grpc.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p1beta1\services\image_annotator\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\services\image_annotator\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\services\product_search\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\services\product_search\transports\grpc_asyncio.py', '.venv\Lib\site-packages\google\cloud\~ision_v1\services\product_search\transports\__init__.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p3beta1\types\product_search_service.py', '.venv\Lib\site-packages\google\cloud\~ision_v1p2beta1\types\text_annotation.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [27500]
+INFO:     Started server process [9176]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app\core\config.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [9176]
+INFO:     Started server process [452]
+INFO:     Waiting for application startup.
+Failed to ensure report storage bucket 'inspection-reports'
+Traceback (most recent call last):
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpx\_transports\default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpx\_transports\default.py", line 394, in handle_async_request
+    resp = await self._pool.handle_async_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpcore\_async\connection_pool.py", line 256, in handle_async_request
+    raise exc from None
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpcore\_async\connection_pool.py", line 236, in handle_async_request
+    response = await connection.handle_async_request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        pool_request.request
+        ^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpcore\_async\connection.py", line 101, in handle_async_request
+    raise exc
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpcore\_async\connection.py", line 78, in handle_async_request
+    stream = await self._connect(request)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpcore\_async\connection.py", line 156, in _connect
+    stream = await stream.start_tls(**kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpcore\_backends\anyio.py", line 67, in start_tls
+    with map_exceptions(exc_map):
+         ~~~~~~~~~~~~~~^^^^^^^^^
+  File "C:\Users\Dnyaneshwar\AppData\Local\Programs\Python\Python314\Lib\contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpcore\_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.ConnectTimeout
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\app\services\storage_service.py", line 82, in ensure_inspection_reports_bucket
+    if await storage_bucket_exists(bucket):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\app\services\storage_service.py", line 43, in storage_bucket_exists
+    response = await client.get(url, headers=supabase_headers())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpx\_client.py", line 1768, in get
+    return await self.request(
+           ^^^^^^^^^^^^^^^^^^^
+    ...<9 lines>...
+    )
+    ^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpx\_client.py", line 1540, in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpx\_client.py", line 1629, in send
+    response = await self._send_handling_auth(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+    )
+    ^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpx\_client.py", line 1657, in _send_handling_auth
+    response = await self._send_handling_redirects(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpx\_client.py", line 1694, in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpx\_client.py", line 1730, in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpx\_transports\default.py", line 393, in handle_async_request
+    with map_httpcore_exceptions():
+         ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Dnyaneshwar\AppData\Local\Programs\Python\Python314\Lib\contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "C:\Users\Dnyaneshwar\Downloads\PackIntel\PackIntel\backend\.venv\Lib\site-packages\httpx\_transports\default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ConnectTimeout
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app\services\gemini_vision.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [452]
+WARNING:  WatchFiles detected changes in 'app\services\gemini_vision.py'. Reloading...
+INFO:     Started server process [5556]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [5556]
+WARNING:  WatchFiles detected changes in 'app\services\gemini_vision.py'. Reloading...
+INFO:     Started server process [4748]
+INFO:     Waiting for application startup.
+OCR unavailable: Tesseract OCR is configured but cannot be executed.
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [4748]
+INFO:     Started server process [21364]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'tests\test_gemini_vision.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [21364]
+INFO:     Started server process [17744]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'test_vision.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [17744]
+WARNING:  WatchFiles detected changes in 'test_gemini.py'. Reloading...
+INFO:     Started server process [13448]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [13448]
+INFO:     Started server process [17292]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.

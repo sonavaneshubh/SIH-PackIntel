@@ -32,8 +32,9 @@ class Settings(BaseSettings):
     # actual label image(s) and returns structured product data directly,
     # bypassing the OCR → text-normalizer → product-extractor path. Tesseract
     # OCR (and Gemini-from-text) remain the fallback when Gemini is disabled or
-    # fails. Tests force this off so the suite stays offline.
-    GEMINI_PRIMARY_ENABLED: bool = False
+    # fails. This is the production default; the hermetic test suite forces it
+    # off so tests stay offline.
+    GEMINI_PRIMARY_ENABLED: bool = True
 
     # Pipeline tuning (see scanning pipeline services).
     # Detection confidence below which an image is NOT considered a food

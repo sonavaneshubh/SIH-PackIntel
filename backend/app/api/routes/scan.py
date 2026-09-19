@@ -718,13 +718,15 @@ def _process_one_side(side: dict) -> Dict[str, Any]:
     side_warnings: List[str] = []
     detection, quality = _detect_and_qualify(side, side_warnings)
 
-    # The decoded PIL copy is only needed for the detection/quality stage.
-    # Drop it before OCR so the worker is not holding a full pixel buffer
-    # (plus a second decode inside the OCR engine) for the rest of the scan.
+    # The decoded PIL copy is only needed for the detection/quality stage and
+    # the OCR pass. Drop it from the side dict so later stages do not hold a
+    # second full pixel buffer, then hand the single copy to OCR directly so
+    # the image is not re-fetched and re-decoded for the OCR subprocess.
+    pil_image = side.get("pil_image")
     if "pil_image" in side:
         del side["pil_image"]
 
-    ocr_result = _run_ocr(side["image_ref"])
+    ocr_result = _run_ocr(side["image_ref"], pil_image)
     quality = _merge_quality(quality, ocr_result, label, side_warnings)
     ocr_text = str(ocr_result.get("raw_text") or ocr_result.get("text") or "").strip()
     layout_text = str(ocr_result.get("layout_text") or "").strip()
@@ -753,10 +755,14 @@ def _process_one_side(side: dict) -> Dict[str, Any]:
     }
 
 
-def _run_ocr(image_ref: str) -> Dict[str, Any]:
+def _run_ocr(image_ref: str, pil_image: Optional[Image.Image] = None) -> Dict[str, Any]:
     """Run the production OCR engine; a partial failure returns a warning dict."""
     try:
-        result = get_ocr_service().process_image(image_ref)
+        # Pass the already-decode image when available (upload path) so OCR
+        # does not re-fetch it; otherwise fall back to the URL fetch so the
+        # engine remains compatible with stub/mock implementations.
+        kwargs = {} if pil_image is None else {"pil_image": pil_image}
+        result = get_ocr_service().process_image(image_ref, **kwargs)
         if isinstance(result, dict):
             return result
         return dict(_OCR_FAILURE_TEMPLATE)

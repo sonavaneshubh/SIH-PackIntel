@@ -17,9 +17,10 @@ try:
 except ImportError:
     HAS_PYTESSERACT = False
 
-_PSMOS = (3, 6, 11)
-
-_TESSERACT_STRONG_SCORE = 10.0
+# PSM 6 (single uniform text block) is the fast path: labels are usually one
+# text block, and it is tried first so the common case costs a single Tesseract
+# subprocess pass. The other modes are only reached when PSM 6 yields nothing.
+_PSMOS = (6, 3, 11)
 
 
 def _resolve_tesseract_command() -> str | None:
@@ -269,22 +270,19 @@ class OCRService:
         candidates = []
         ocr_warning = None
         for variant in variants:
-            strong_found = False
             for psm in _PSMOS:
                 try:
                     text = cls._run_tesseract_string(variant, psm).strip()
                     if cls._meaningful_text(text):
                         candidates.append((text, variant, psm))
-                        # A rich, self-contained pass is good enough: stop
-                        # spawning more tesseract subprocesses once one strong
-                        # candidate exists. Sparse/noisy labels still get the
-                        # full PSM sweep.
-                        if cls._score_candidate(text) >= _TESSERACT_STRONG_SCORE:
-                            strong_found = True
-                            break
+                        # The first usable pass is good enough: stop so we do
+                        # not keep spawning extra tesseract subprocesses per
+                        # label. The ROI layout pass still rescans each label
+                        # region afterwards, so sparse text is not lost.
+                        break
                 except (pytesseract.TesseractError, OSError) as err:
                     ocr_warning = str(err)
-            if strong_found:
+            if candidates:
                 break
 
         if not candidates:
@@ -340,7 +338,7 @@ class OCRService:
         return regions
 
     @classmethod
-    def process_image(cls, image_url: str) -> Dict[str, Any]:
+    def process_image(cls, image_url: str, pil_image: Optional[Image.Image] = None) -> Dict[str, Any]:
         """
         OCR text extraction from product label images.
 
@@ -352,7 +350,12 @@ class OCRService:
             raise ValueError("Image URL is required for OCR scanning.")
 
         try:
-            pil_img = cls._fetch_image(image_url)
+            if pil_image is not None:
+                pil_img = pil_image
+                if pil_img.mode != "RGB":
+                    pil_img = pil_img.convert("RGB")
+            else:
+                pil_img = cls._fetch_image(image_url)
         except (OSError, ValueError) as err:
             raise ValueError(f"Could not load image from input: {err}") from err
 

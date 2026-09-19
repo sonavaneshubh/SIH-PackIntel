@@ -411,7 +411,7 @@ class StubOCR:
         self.confidence = confidence
         self.quality = quality
 
-    def process_image(self, image_url):
+    def process_image(self, image_url, pil_image=None):
         return {
             "raw_text": self.text,
             "confidence": self.confidence,

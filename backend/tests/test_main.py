@@ -52,7 +52,7 @@ def test_low_confidence_scan_does_not_invoke_gemini(monkeypatch):
     image = Image.new("RGB", (600, 600), "white")
 
     class FakeOCR:
-        def process_image(self, image_url):
+        def process_image(self, image_url, pil_image=None):
             return {
                 "raw_text": "Rice",
                 "confidence": 25.0,

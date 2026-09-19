@@ -279,7 +279,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('packintel_demo_session', JSON.stringify(DEMO_INSPECTOR));
     }
     setIsLoading(false);
-    router.push('/dashboard');
+    router.push('/');
   }, [router]);
 
   const signIn = useCallback(async ({ email, password }: { email: string; password: string }) => {
@@ -386,7 +386,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           } else if (status === 'rejected') {
             router.push('/verification-rejected');
           } else {
-            router.push('/dashboard');
+            router.push('/');
           }
           return { success: true };
         }

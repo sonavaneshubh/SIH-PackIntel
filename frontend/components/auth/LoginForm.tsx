@@ -66,7 +66,7 @@ export function LoginForm() {
         // Best-effort sync; still attempt navigation with the current claims.
       }
       if (cancelled) return;
-      router.replace('/dashboard');
+      router.replace('/');
     })();
 
     return () => {

@@ -73,7 +73,7 @@ def stub_ocr(
     if raise_exc is not None:
 
         class _RaisingOCR:
-            def process_image(self, image_url):
+            def process_image(self, image_url, pil_image=None):
                 raise raise_exc
 
         monkeypatch.setattr(scan_route, "get_ocr_service", lambda: _RaisingOCR())
@@ -99,7 +99,7 @@ def stub_ocr(
     }
 
     class _StubOCR:
-        def process_image(self, image_url):
+        def process_image(self, image_url, pil_image=None):
             return dict(result)
 
     monkeypatch.setattr(scan_route, "get_ocr_service", lambda: _StubOCR())
